@@ -4,7 +4,10 @@
       <h1 class="pipelines__title">Pipelines</h1>
       <p class="pipelines__subtitle">Manage and monitor your Airflow pipelines</p>
     </div>
-    <app-button variant="primary">+ New Pipeline</app-button>
+    <div class="pipelines__header-actions">
+      <app-button variant="primary">+ New Pipeline</app-button>
+      <button type="button" class="trigger-dag-btn" (click)="openTriggerModal()">▶ Run MLOps Pipeline</button>
+    </div>
   </div>
 
   <div class="pipelines__toolbar">
@@ -155,3 +158,49 @@
     </div>
   </ng-container>
 </aside>
+
+<!-- ===================== TRIGGER MLOPS PIPELINE MODAL ===================== -->
+<div class="trigger-overlay" *ngIf="showTriggerModal" (click)="closeTriggerModal()"></div>
+
+<div class="trigger-modal" *ngIf="showTriggerModal">
+  <button type="button" class="trigger-modal__close" (click)="closeTriggerModal()" aria-label="Close" [disabled]="triggering">×</button>
+  <h2 class="trigger-modal__title">Run MLOps Pipeline</h2>
+  <p class="trigger-modal__subtitle">Triggers the full talys_mlops_pipeline DAG in Airflow</p>
+
+  <div class="trigger-form">
+    <label class="trigger-form__field">
+      <span class="trigger-form__label">Input Dataset</span>
+      <select class="trigger-form__select" [(ngModel)]="selectedDatasetName" [disabled]="triggering">
+        <option *ngFor="let dataset of triggerDatasets" [value]="dataset.name">
+          {{ dataset.name }} · {{ dataset.format }} · {{ dataset.size }}
+        </option>
+      </select>
+    </label>
+
+    <div class="trigger-form__field">
+      <span class="trigger-form__label">DAG Run Config</span>
+      <div class="dag-config-block">
+        <pre class="dag-config-block__body">{{ dagRunConfigJson }}</pre>
+      </div>
+    </div>
+
+    <div class="trigger-form__field">
+      <span class="trigger-form__label">Pipeline Steps Preview</span>
+      <ul class="dag-steps-preview">
+        <li class="dag-steps-preview__item" *ngFor="let task of dagTasks">
+          <span class="dag-steps-preview__icon">○</span>
+          <span class="dag-steps-preview__id">{{ task.id }}</span>
+          <span class="dag-steps-preview__arrow">→</span>
+          <span class="dag-steps-preview__desc">{{ task.description }}</span>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="trigger-modal__footer">
+    <app-button variant="secondary" [disabled]="triggering" (clicked)="closeTriggerModal()">Cancel</app-button>
+    <app-button variant="primary" [disabled]="triggering" (clicked)="triggerDag()">
+      <span class="dvc-spinner" *ngIf="triggering"></span>{{ triggering ? 'Triggering...' : 'Trigger DAG ▶' }}
+    </app-button>
+  </div>
+</div>

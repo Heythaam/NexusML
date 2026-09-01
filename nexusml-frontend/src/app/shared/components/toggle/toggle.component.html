@@ -1,0 +1,13 @@
+<label class="toggle" [for]="id">
+  <input
+    type="checkbox"
+    [id]="id"
+    class="toggle__input"
+    [checked]="checked"
+    (change)="onChange($any($event.target).checked)"
+  />
+  <span class="toggle__track">
+    <span class="toggle__thumb"></span>
+  </span>
+  <span class="toggle__label" *ngIf="label">{{ label }}</span>
+</label>

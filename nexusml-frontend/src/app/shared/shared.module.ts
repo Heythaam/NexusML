@@ -5,6 +5,7 @@ import { CardComponent } from './components/card/card.component';
 import { ModalComponent } from './components/modal/modal.component';
 import { LoaderComponent } from './components/loader/loader.component';
 import { ToastComponent } from './components/toast/toast.component';
+import { ToggleComponent } from './components/toggle/toggle.component';
 import { HighlightDirective } from './directives/highlight.directive';
 import { TruncatePipe } from './pipes/truncate.pipe';
 
@@ -16,6 +17,7 @@ import { TruncatePipe } from './pipes/truncate.pipe';
     ModalComponent,
     LoaderComponent,
     ToastComponent,
+    ToggleComponent,
     HighlightDirective,
     TruncatePipe
   ],
@@ -28,6 +30,7 @@ import { TruncatePipe } from './pipes/truncate.pipe';
     ModalComponent,
     LoaderComponent,
     ToastComponent,
+    ToggleComponent,
     HighlightDirective,
     TruncatePipe
   ]

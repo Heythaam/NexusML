@@ -1,1 +1,465 @@
-<!-- TODO: implement datasets markup -->
+<div class="datasets">
+  <div class="datasets__header">
+    <div>
+      <h1 class="datasets__title">Datasets</h1>
+      <p class="datasets__subtitle">Manage, version, and validate your training data</p>
+    </div>
+    <app-button variant="primary" (clicked)="openUploadModal()">+ Upload Dataset</app-button>
+  </div>
+
+  <div class="datasets__stats">
+    <app-card class="stat-card">
+      <span class="stat-card__label">Total Datasets</span>
+      <p class="stat-card__value">{{ totalCount }}</p>
+    </app-card>
+    <app-card class="stat-card">
+      <span class="stat-card__label">Total Storage</span>
+      <p class="stat-card__value">{{ totalStorageLabel }}</p>
+    </app-card>
+    <app-card class="stat-card">
+      <span class="stat-card__label">DVC Tracked</span>
+      <p class="stat-card__value">{{ dvcTrackedCount }}</p>
+    </app-card>
+    <app-card class="stat-card">
+      <span class="stat-card__label">Avg Quality Score</span>
+      <p class="stat-card__value">{{ avgQualityScore }}%</p>
+    </app-card>
+  </div>
+
+  <div class="datasets__toolbar">
+    <input
+      type="text"
+      class="datasets__search"
+      placeholder="Search datasets..."
+      [(ngModel)]="searchTerm"
+    />
+
+    <select class="datasets__select" [(ngModel)]="formatFilter">
+      <option value="all">All Formats</option>
+      <option value="CSV">CSV</option>
+      <option value="JSON">JSON</option>
+      <option value="Parquet">Parquet</option>
+      <option value="Excel">Excel</option>
+    </select>
+
+    <select class="datasets__select" [(ngModel)]="statusFilter">
+      <option value="all">All Statuses</option>
+      <option value="ready">Ready</option>
+      <option value="processing">Processing</option>
+      <option value="failed">Failed</option>
+      <option value="uploading">Uploading</option>
+    </select>
+
+    <select class="datasets__select" [(ngModel)]="qualityFilter">
+      <option value="all">All Quality</option>
+      <option value="passed">Passed</option>
+      <option value="warning">Warning</option>
+      <option value="failed">Failed</option>
+      <option value="pending">Pending</option>
+    </select>
+
+    <span class="datasets__count">Showing {{ filteredDatasets.length }} of {{ totalCount }} datasets</span>
+  </div>
+
+  <div class="dataset-grid">
+    <div
+      class="dataset-card"
+      *ngFor="let dataset of filteredDatasets"
+      [class.dataset-card--failed]="dataset.status === 'failed'"
+      (click)="openDetail(dataset)"
+    >
+      <div class="dataset-card__top">
+        <div class="dataset-card__badges">
+          <span class="format-badge" [ngClass]="formatBadgeClass(dataset.format)">{{ dataset.format }}</span>
+          <span class="dvc-badge" *ngIf="dataset.dvcTracked">DVC ✓</span>
+        </div>
+        <span class="badge" [ngClass]="statusBadgeClass(dataset.status)">
+          <span class="badge__dot" *ngIf="isTransient(dataset)"></span>
+          {{ dataset.status }}
+        </span>
+      </div>
+
+      <h3 class="dataset-card__name">{{ dataset.name }}</h3>
+      <p class="dataset-card__description">{{ dataset.description }}</p>
+
+      <div class="dataset-card__meta">
+        <span>{{ formatCount(dataset.rows) }} rows</span>
+        <span class="dataset-card__meta-sep">·</span>
+        <span>{{ dataset.columns }} cols</span>
+        <span class="dataset-card__meta-sep">·</span>
+        <span>{{ dataset.size }}</span>
+      </div>
+
+      <div class="quality-block" *ngIf="!isTransient(dataset); else transientBlock">
+        <div class="quality-block__row">
+          <span class="quality-block__label">Quality Score</span>
+          <span class="quality-block__score" [ngClass]="'quality-block__score--' + qualityColor(dataset.qualityScore)">
+            {{ dataset.qualityScore }}%
+          </span>
+        </div>
+        <div class="quality-bar">
+          <div
+            class="quality-bar__fill"
+            [ngClass]="'quality-bar__fill--' + qualityColor(dataset.qualityScore)"
+            [style.width.%]="dataset.qualityScore"
+          ></div>
+        </div>
+        <span class="quality-badge" [ngClass]="qualityBadgeClass(dataset.qualityStatus)">{{ dataset.qualityStatus }}</span>
+      </div>
+
+      <ng-template #transientBlock>
+        <div class="quality-block">
+          <div class="quality-block__row">
+            <span class="quality-block__label">{{ dataset.status === 'uploading' ? 'Uploading…' : 'Processing…' }}</span>
+          </div>
+          <div class="shimmer-track">
+            <div class="shimmer-fill"></div>
+          </div>
+        </div>
+      </ng-template>
+
+      <div class="dataset-card__tags">
+        <span class="tag" *ngFor="let tag of dataset.tags">{{ tag }}</span>
+      </div>
+
+      <div class="dataset-card__footer">
+        <div class="dataset-card__footer-left">
+          <span class="version-pill">{{ dataset.version }}</span>
+          <div class="avatar" [title]="dataset.owner">{{ initials(dataset.owner) }}</div>
+          <span class="dataset-card__modified">{{ dataset.lastModified }}</span>
+        </div>
+        <button type="button" class="view-details" (click)="openDetail(dataset); $event.stopPropagation()">View Details</button>
+      </div>
+    </div>
+
+    <div class="dataset-grid__empty" *ngIf="filteredDatasets.length === 0">No datasets match your filters.</div>
+  </div>
+</div>
+
+<div class="detail-overlay" *ngIf="selectedDataset" (click)="closeDetail()"></div>
+
+<aside class="detail-panel" [class.detail-panel--open]="selectedDataset">
+  <ng-container *ngIf="selectedDataset as dataset">
+    <button type="button" class="detail-panel__close" (click)="closeDetail()" aria-label="Close">×</button>
+
+    <div class="detail-panel__heading">
+      <h2 class="detail-panel__title">{{ dataset.name }}</h2>
+      <div class="detail-panel__badges">
+        <span class="format-badge" [ngClass]="formatBadgeClass(dataset.format)">{{ dataset.format }}</span>
+        <span class="badge" [ngClass]="statusBadgeClass(dataset.status)">{{ dataset.status }}</span>
+      </div>
+    </div>
+
+    <section class="detail-section">
+      <h3 class="detail-section__title">Details</h3>
+      <div class="detail-grid">
+        <div class="detail-grid__item">
+          <span class="detail-grid__label">Size</span>
+          <span class="detail-grid__value">{{ dataset.size }}</span>
+        </div>
+        <div class="detail-grid__item">
+          <span class="detail-grid__label">Rows</span>
+          <span class="detail-grid__value">{{ formatCount(dataset.rows) }}</span>
+        </div>
+        <div class="detail-grid__item">
+          <span class="detail-grid__label">Columns</span>
+          <span class="detail-grid__value">{{ dataset.columns }}</span>
+        </div>
+        <div class="detail-grid__item">
+          <span class="detail-grid__label">Format</span>
+          <span class="detail-grid__value">{{ dataset.format }}</span>
+        </div>
+        <div class="detail-grid__item">
+          <span class="detail-grid__label">Owner</span>
+          <span class="detail-grid__value">{{ dataset.owner }}</span>
+        </div>
+        <div class="detail-grid__item">
+          <span class="detail-grid__label">Created</span>
+          <span class="detail-grid__value">{{ dataset.createdAt }}</span>
+        </div>
+        <div class="detail-grid__item">
+          <span class="detail-grid__label">Last Modified</span>
+          <span class="detail-grid__value">{{ dataset.lastModified }}</span>
+        </div>
+        <div class="detail-grid__item">
+          <span class="detail-grid__label">Quality Score</span>
+          <span class="detail-grid__value" [ngClass]="'detail-grid__value--' + qualityColor(dataset.qualityScore)">
+            {{ dataset.qualityScore > 0 ? dataset.qualityScore + '%' : '—' }}
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <section class="detail-section">
+      <div class="detail-section__header">
+        <h3 class="detail-section__title">Quality Gate</h3>
+        <span class="quality-badge" [ngClass]="qualityBadgeClass(dataset.qualityStatus)">{{ dataset.qualityStatus }}</span>
+      </div>
+      <ul class="check-list">
+        <li class="check-list__item" *ngFor="let check of selectedQualityChecks">
+          <span class="check-list__icon" [ngClass]="'check-list__icon--' + check.state">{{ checkIcon(check.state) }}</span>
+          <span class="check-list__text">{{ check.text }}</span>
+        </li>
+      </ul>
+    </section>
+
+    <section class="detail-section">
+      <div class="detail-section__header">
+        <h3 class="detail-section__title">Version History</h3>
+        <span class="dvc-badge" *ngIf="dataset.dvcTracked">DVC Tracked</span>
+      </div>
+      <ul class="version-history">
+        <li
+          class="version-history__item"
+          *ngFor="let ver of dataset.versions; let i = index"
+          [class.version-history__item--latest]="i === 0"
+        >
+          <div class="version-history__row">
+            <span class="version-pill">{{ ver.version }}</span>
+            <span class="version-history__commit">{{ ver.commit }}</span>
+            <span class="version-history__date">{{ ver.createdAt }}</span>
+          </div>
+          <div class="version-history__meta">
+            <span class="version-history__author">{{ ver.changedBy }}</span>
+            <span class="version-history__message">{{ ver.message }}</span>
+          </div>
+        </li>
+      </ul>
+    </section>
+
+    <section class="detail-section dvc-ops">
+      <div class="detail-section__header">
+        <h3 class="detail-section__title">Data Versioning</h3>
+        <span class="dvc-ops__badge">DVC</span>
+      </div>
+
+      <div class="dvc-ops__grid">
+        <div class="dvc-card">
+          <div class="dvc-card__icon">🔒</div>
+          <h4 class="dvc-card__name">Track Dataset</h4>
+          <p class="dvc-card__desc">Start versioning this dataset with DVC. Creates a .dvc file and adds it to your pipeline.</p>
+
+          <app-button
+            *ngIf="!dataset.dvcTracked"
+            variant="primary"
+            [fullWidth]="true"
+            [disabled]="dvcTrack.running"
+            (clicked)="trackDataset(dataset)"
+          >
+            <span class="dvc-spinner" *ngIf="dvcTrack.running"></span>{{ dvcTrack.running ? 'Tracking...' : 'Track with DVC' }}
+          </app-button>
+          <span class="dvc-card__already" *ngIf="dataset.dvcTracked">Already Tracked ✓</span>
+
+          <div class="dvc-card__status" *ngIf="dvcTrack.steps.length || dvcTrack.done">
+            <ul class="dvc-steps">
+              <li class="dvc-steps__item" *ngFor="let step of dvcTrack.steps">
+                <span class="dvc-steps__icon">✓</span>{{ step }}
+              </li>
+            </ul>
+            <p class="dvc-card__final" *ngIf="dvcTrack.done">✓ Dataset is now version tracked!</p>
+          </div>
+        </div>
+
+        <div class="dvc-card">
+          <div class="dvc-card__icon">☁️</div>
+          <h4 class="dvc-card__name">Push to Remote</h4>
+          <p class="dvc-card__desc">Sync this dataset to remote storage (S3). All team members can then pull the latest version.</p>
+
+          <app-button
+            variant="secondary"
+            [fullWidth]="true"
+            [disabled]="!dataset.dvcTracked || dvcPush.running"
+            (clicked)="pushToRemote(dataset)"
+          >
+            <span class="dvc-spinner" *ngIf="dvcPush.running"></span>{{ dvcPush.running ? 'Pushing...' : 'Push to Remote' }}
+          </app-button>
+          <p class="dvc-card__warning" *ngIf="!dataset.dvcTracked">{{ dvcTrackWarning }}</p>
+
+          <div class="dvc-card__status" *ngIf="dvcPush.running || dvcPush.done">
+            <div class="dvc-progress" *ngIf="dvcPush.running">
+              <div class="dvc-progress__track">
+                <div class="dvc-progress__fill" [style.width.%]="dvcPush.progress"></div>
+              </div>
+              <span class="dvc-progress__label">Syncing {{ dataset.size }} to s3://nexusml-datasets...</span>
+            </div>
+            <p class="dvc-card__final" *ngIf="dvcPush.done">
+              ✓ Pushed successfully — available to all team members
+              <span class="dvc-commit">{{ dvcPush.commit }}</span>
+            </p>
+          </div>
+        </div>
+
+        <div class="dvc-card">
+          <div class="dvc-card__icon">📥</div>
+          <h4 class="dvc-card__name">Pull Latest</h4>
+          <p class="dvc-card__desc">Download the latest version of this dataset from remote storage to your local workspace.</p>
+
+          <app-button
+            variant="secondary"
+            [fullWidth]="true"
+            [disabled]="!dataset.dvcTracked || dvcPull.running"
+            (clicked)="pullLatest(dataset)"
+          >
+            <span class="dvc-spinner" *ngIf="dvcPull.running"></span>{{ dvcPull.running ? 'Fetching...' : 'Pull Latest' }}
+          </app-button>
+          <p class="dvc-card__warning" *ngIf="!dataset.dvcTracked">{{ dvcTrackWarning }}</p>
+
+          <div class="dvc-card__status" *ngIf="dvcPull.steps.length || dvcPull.done">
+            <ul class="dvc-steps">
+              <li class="dvc-steps__item" *ngFor="let step of dvcPull.steps">
+                <span class="dvc-steps__icon">✓</span>{{ step }}
+              </li>
+            </ul>
+            <p class="dvc-card__final" *ngIf="dvcPull.done">✓ {{ dataset.version }} is ready — {{ formatCount(dataset.rows) }} rows loaded</p>
+          </div>
+        </div>
+
+        <div class="dvc-card dvc-card--compare">
+          <div class="dvc-card__icon">🔍</div>
+          <h4 class="dvc-card__name">Compare Versions</h4>
+          <p class="dvc-card__desc">See what changed between two versions of this dataset.</p>
+
+          <div class="dvc-compare__selects">
+            <label class="dvc-compare__select-field">
+              <span>From</span>
+              <select class="dvc-compare__select" [(ngModel)]="dvcCompare.fromVersion" [disabled]="!dataset.dvcTracked">
+                <option *ngFor="let ver of dataset.versions" [value]="ver.version">{{ ver.version }}</option>
+              </select>
+            </label>
+            <label class="dvc-compare__select-field">
+              <span>To</span>
+              <select class="dvc-compare__select" [(ngModel)]="dvcCompare.toVersion" [disabled]="!dataset.dvcTracked">
+                <option *ngFor="let ver of dataset.versions" [value]="ver.version">{{ ver.version }}</option>
+              </select>
+            </label>
+          </div>
+
+          <app-button
+            variant="secondary"
+            [fullWidth]="true"
+            [disabled]="!dataset.dvcTracked || dvcCompare.running"
+            (clicked)="compareVersions(dataset)"
+          >
+            <span class="dvc-spinner" *ngIf="dvcCompare.running"></span>{{ dvcCompare.running ? 'Comparing...' : 'Compare' }}
+          </app-button>
+          <p class="dvc-card__warning" *ngIf="!dataset.dvcTracked">{{ dvcTrackWarning }}</p>
+
+          <div class="dvc-diff" *ngIf="dvcCompare.done">
+            <table class="dvc-diff__table">
+              <thead>
+                <tr>
+                  <th>Metric</th>
+                  <th>{{ dvcCompare.fromVersion }}</th>
+                  <th>{{ dvcCompare.toVersion }}</th>
+                  <th>Change</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let row of dvcCompare.rows">
+                  <td>{{ row.metric }}</td>
+                  <td>{{ row.fromValue }}</td>
+                  <td>{{ row.toValue }}</td>
+                  <td class="dvc-diff__change" [ngClass]="'dvc-diff__change--' + row.changeType">{{ row.change }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="dvc-logs-toggle">
+        <app-toggle label="Show technical logs" [checked]="showDvcLogs" (changed)="showDvcLogs = $event"></app-toggle>
+      </div>
+
+      <div class="dvc-terminal" *ngIf="showDvcLogs">
+        <div class="dvc-terminal__header">
+          <span class="dvc-terminal__title">{{ dvcLogTitle || 'No command run yet' }}</span>
+          <button type="button" class="dvc-terminal__copy" *ngIf="dvcLogLines.length" (click)="copyLogs()">Copy</button>
+        </div>
+        <pre class="dvc-terminal__body" *ngIf="dvcLogLines.length; else noDvcLogs">{{ dvcLogText }}</pre>
+        <ng-template #noDvcLogs>
+          <p class="dvc-terminal__empty">Run an operation above to see its DVC command output here.</p>
+        </ng-template>
+      </div>
+    </section>
+
+    <section class="detail-section">
+      <h3 class="detail-section__title">Tags</h3>
+      <div class="detail-tags">
+        <span class="tag" *ngFor="let tag of dataset.tags">{{ tag }}</span>
+      </div>
+    </section>
+
+    <div class="detail-panel__actions">
+      <app-button variant="primary" [fullWidth]="true" (clicked)="downloadDataset(dataset)">Download Dataset</app-button>
+      <app-button variant="secondary" [fullWidth]="true" (clicked)="createVersion(dataset)">Create New Version</app-button>
+      <app-button variant="secondary" [fullWidth]="true" (clicked)="runQualityCheck(dataset)">Run Quality Check</app-button>
+      <app-button variant="danger" [fullWidth]="true" *ngIf="isAdmin" (clicked)="deleteDataset(dataset)">Delete Dataset</app-button>
+    </div>
+  </ng-container>
+</aside>
+
+<div class="upload-overlay" *ngIf="showUploadModal" (click)="closeUploadModal()"></div>
+
+<div class="upload-modal" *ngIf="showUploadModal">
+  <button type="button" class="upload-modal__close" (click)="closeUploadModal()" aria-label="Close">×</button>
+  <h2 class="upload-modal__title">Upload New Dataset</h2>
+
+  <div
+    class="drop-zone"
+    [class.drop-zone--active]="isDragOver"
+    (dragover)="onDragOver($event)"
+    (dragleave)="onDragLeave($event)"
+    (drop)="onDrop($event)"
+  >
+    <div class="drop-zone__icon">⬆</div>
+    <p class="drop-zone__text">Drag &amp; drop your file here</p>
+    <label class="drop-zone__browse">
+      or browse files
+      <input type="file" class="drop-zone__input" accept=".csv,.json,.parquet,.xlsx,.xls" (change)="onFileSelected($event)" />
+    </label>
+    <p class="drop-zone__hint">Accepted formats: CSV, JSON, Parquet, Excel</p>
+  </div>
+
+  <div class="upload-progress" *ngIf="isFileSelected">
+    <div class="upload-progress__file">
+      <span class="upload-progress__name">{{ selectedFile?.name }}</span>
+      <span class="upload-progress__size">{{ selectedFileSize }}</span>
+    </div>
+    <div class="upload-progress__track">
+      <div class="upload-progress__fill" [style.width.%]="uploadProgress"></div>
+    </div>
+    <span class="upload-progress__status">
+      {{ uploadComplete ? 'Upload complete ✓' : 'Uploading... ' + uploadProgress + '%' }}
+    </span>
+  </div>
+
+  <div class="upload-form">
+    <label class="upload-form__field">
+      <span class="upload-form__label">Dataset name</span>
+      <input type="text" class="upload-form__input" [(ngModel)]="datasetNameInput" placeholder="dataset_name" />
+    </label>
+
+    <label class="upload-form__field">
+      <span class="upload-form__label">Description</span>
+      <textarea class="upload-form__textarea" rows="3" [(ngModel)]="descriptionInput" placeholder="What does this dataset contain?"></textarea>
+    </label>
+
+    <label class="upload-form__field">
+      <span class="upload-form__label">Tags</span>
+      <input type="text" class="upload-form__input" [(ngModel)]="tagsInput" placeholder="finance, fraud, ml" />
+    </label>
+
+    <div class="upload-form__toggle">
+      <app-toggle label="Enable DVC tracking" [checked]="dvcEnabled" (changed)="dvcEnabled = $event"></app-toggle>
+    </div>
+    <div class="upload-form__toggle">
+      <app-toggle label="Run quality gate after upload" [checked]="qualityGateEnabled" (changed)="qualityGateEnabled = $event"></app-toggle>
+    </div>
+  </div>
+
+  <div class="upload-modal__footer">
+    <app-button variant="secondary" (clicked)="closeUploadModal()">Cancel</app-button>
+    <app-button variant="primary" [disabled]="!uploadComplete" (clicked)="confirmUpload()">Upload &amp; Track</app-button>
+  </div>
+</div>

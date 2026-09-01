@@ -1,1 +1,349 @@
-<!-- TODO: implement monitoring markup -->
+<div class="monitoring">
+  <div class="monitoring__header">
+    <div>
+      <h1 class="monitoring__title">Monitoring</h1>
+      <p class="monitoring__subtitle">Real-time model and infrastructure observability</p>
+    </div>
+    <div class="monitoring__live">
+      <span class="live-indicator">
+        <span class="live-indicator__dot"></span>
+        Last updated: {{ lastUpdatedLabel }}
+      </span>
+      <button type="button" class="icon-btn icon-btn--refresh" title="Refresh" [disabled]="refreshing" (click)="refreshAll()">
+        <span class="spinner" *ngIf="refreshing"></span>
+        <span *ngIf="!refreshing">⟳</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="monitoring__stats">
+    <app-card class="stat-card">
+      <span class="stat-card__label">Models Monitored</span>
+      <p class="stat-card__value">{{ modelsMonitoredCount }}</p>
+    </app-card>
+    <app-card class="stat-card">
+      <span class="stat-card__label">Active Alerts</span>
+      <p class="stat-card__value stat-card__value--danger">{{ unacknowledgedCount }}</p>
+    </app-card>
+    <app-card class="stat-card">
+      <span class="stat-card__label">Avg Model Health</span>
+      <p class="stat-card__value stat-card__value--warning">{{ avgModelHealth }}%</p>
+    </app-card>
+    <app-card class="stat-card">
+      <span class="stat-card__label">Services Online</span>
+      <p class="stat-card__value stat-card__value--warning">{{ servicesOnlineCount }}/{{ infraMetrics.length }}</p>
+    </app-card>
+    <app-card class="stat-card">
+      <span class="stat-card__label">Avg Latency</span>
+      <p class="stat-card__value">{{ avgLatency }}ms</p>
+    </app-card>
+  </div>
+
+  <div class="monitoring__layout">
+    <div class="monitoring__main">
+      <div class="tab-pills">
+        <button type="button" class="tab-pills__item" [class.tab-pills__item--active]="activeTab === 'model-drift'" (click)="setTab('model-drift')">Model Drift</button>
+        <button type="button" class="tab-pills__item" [class.tab-pills__item--active]="activeTab === 'feature-drift'" (click)="setTab('feature-drift')">Feature Drift</button>
+        <button type="button" class="tab-pills__item" [class.tab-pills__item--active]="activeTab === 'infrastructure'" (click)="setTab('infrastructure')">Infrastructure</button>
+      </div>
+
+      <!-- ===================== TAB 1: MODEL DRIFT ===================== -->
+      <div class="tab-content" *ngIf="activeTab === 'model-drift'">
+        <div class="monitor-list">
+          <div
+            class="monitor-card"
+            *ngFor="let monitor of modelMonitors"
+            [class.monitor-card--critical]="monitor.driftStatus === 'critical'"
+            [class.monitor-card--warning]="monitor.driftStatus === 'warning'"
+          >
+            <div class="monitor-card__top">
+              <div class="monitor-card__heading">
+                <h3 class="monitor-card__name">{{ monitor.modelName }}</h3>
+                <span class="stage-pill" [ngClass]="stageClass(monitor.stage)">{{ monitor.stage }}</span>
+                <span class="status-badge" [ngClass]="statusClass(monitor.driftStatus)">{{ monitor.driftStatus }}</span>
+                <span class="monitor-card__alert-icon" *ngIf="monitor.driftStatus === 'critical'" title="Critical">🔴</span>
+                <span class="monitor-card__alert-icon" *ngIf="monitor.driftStatus === 'warning'" title="Warning">⚠</span>
+              </div>
+              <span class="monitor-card__updated">Last updated: {{ monitor.lastUpdated }}</span>
+            </div>
+
+            <div class="monitor-card__metrics">
+              <div class="monitor-card__metric-main">
+                <span
+                  class="monitor-card__value"
+                  [ngClass]="'monitor-card__value--' + monitor.driftStatus"
+                  [class.flash]="isFlashing(monitor.id)"
+                >{{ formatModelValue(monitor, monitor.currentValue) }}</span>
+                <span class="monitor-card__baseline">vs baseline {{ formatModelValue(monitor, monitor.baselineValue) }}</span>
+              </div>
+              <span class="drift-badge" [ngClass]="'drift-badge--' + monitor.driftStatus">
+                {{ formatDrift(monitor.drift) }} {{ driftArrow(monitor.drift) }}
+              </span>
+              <span class="monitor-card__threshold">Threshold: {{ formatModelValue(monitor, monitor.threshold) }}</span>
+            </div>
+
+            <div class="sparkline" [ngClass]="'sparkline--' + monitor.driftStatus" *ngIf="modelSparkline(monitor) as spark">
+              <svg viewBox="0 0 280 60" preserveAspectRatio="none" class="sparkline__svg">
+                <line class="sparkline__grid" x1="0" y1="15" x2="280" y2="15"></line>
+                <line class="sparkline__grid" x1="0" y1="30" x2="280" y2="30"></line>
+                <line class="sparkline__grid" x1="0" y1="45" x2="280" y2="45"></line>
+                <rect
+                  *ngIf="spark.thresholdY !== null"
+                  class="sparkline__danger-zone"
+                  x="0"
+                  [attr.y]="spark.thresholdY"
+                  width="280"
+                  [attr.height]="60 - spark.thresholdY!"
+                ></rect>
+                <polygon class="sparkline__area" [attr.points]="spark.area"></polygon>
+                <polyline class="sparkline__line" [attr.points]="spark.polyline"></polyline>
+                <circle class="sparkline__dot" [attr.cx]="spark.lastX" [attr.cy]="spark.lastY" r="4"></circle>
+              </svg>
+              <div class="sparkline__labels">
+                <span>24h ago</span>
+                <span>now</span>
+              </div>
+            </div>
+
+            <div class="monitor-card__footer">
+              <button type="button" class="link-btn" (click)="viewFullHistory()">View full history →</button>
+              <span class="monitor-card__run-ref">Detected in run: {{ dagRunIdFor(monitor.modelName) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== TAB 2: FEATURE DRIFT ===================== -->
+      <div class="tab-content" *ngIf="activeTab === 'feature-drift'">
+        <div class="pipeline-source-banner">
+          <span class="pipeline-source-banner__text">Drift data sourced from <code>monitor_drift</code> task — last pipeline run: {{ lastPipelineRunLabel }}</span>
+          <a class="pipeline-source-banner__link" routerLink="/pipelines" [queryParams]="{ trigger: 'true' }">Run Pipeline →</a>
+        </div>
+
+        <div class="psi-legend">
+          <h3 class="psi-legend__title">PSI Score Guide</h3>
+          <div class="psi-legend__items">
+            <span class="psi-legend__item">🟢 &lt; 0.1 Healthy</span>
+            <span class="psi-legend__item">🟡 0.1–0.25 Warning</span>
+            <span class="psi-legend__item">🔴 &gt; 0.25 Critical</span>
+          </div>
+        </div>
+
+        <app-card class="feature-table-card">
+          <div class="feature-table-wrap">
+            <table class="feature-table">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>Feature Name</th>
+                  <th>Model</th>
+                  <th>Type</th>
+                  <th>PSI Score</th>
+                  <th>Distribution</th>
+                  <th>Null Rate</th>
+                  <th>Outlier Rate</th>
+                  <th>Status</th>
+                  <th>Last Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                <ng-container *ngFor="let feature of featureMonitors">
+                  <tr class="feature-table__row" (click)="toggleFeatureExpand(feature)">
+                    <td>
+                      <button type="button" class="expand-btn" [class.expand-btn--open]="isFeatureExpanded(feature)" aria-label="Expand feature details">▶</button>
+                    </td>
+                    <td class="feature-table__name">
+                      {{ feature.featureName }}
+                      <div class="feature-table__run-ref">Detected in run: {{ dagRunIdFor(feature.model) }}</div>
+                    </td>
+                    <td>{{ feature.model }}</td>
+                    <td><span class="type-badge" [ngClass]="'type-badge--' + feature.type">{{ feature.type }}</span></td>
+                    <td>
+                      <div class="psi-cell">
+                        <div class="psi-bar">
+                          <div
+                            class="psi-bar__fill"
+                            [ngClass]="'psi-bar__fill--' + psiColorClass(feature.driftScore)"
+                            [style.width.%]="psiBarPct(feature.driftScore)"
+                          ></div>
+                        </div>
+                        <span class="psi-cell__value">{{ feature.driftScore.toFixed(2) }}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <ng-container *ngIf="hasDistributionStats(feature); else distTextBadge">
+                        <div class="dist-bars">
+                          <div class="dist-bar dist-bar--baseline" [style.height.px]="distributionBarHeight(feature.baselineMean!, feature)"></div>
+                          <div class="dist-bar" [ngClass]="'dist-bar--' + feature.driftStatus" [style.height.px]="distributionBarHeight(feature.currentMean!, feature)"></div>
+                        </div>
+                        <span class="dist-cell__means">μ {{ feature.baselineMean }} → μ {{ feature.currentMean }}</span>
+                      </ng-container>
+                      <ng-template #distTextBadge>
+                        <span class="dist-text-badge" [ngClass]="'dist-text-badge--' + feature.driftStatus">{{ distributionLabel(feature) }}</span>
+                      </ng-template>
+                    </td>
+                    <td>{{ feature.nullRate }}%</td>
+                    <td>{{ feature.outlierRate }}%</td>
+                    <td><span class="status-badge" [ngClass]="statusClass(feature.driftStatus)">{{ feature.driftStatus }}</span></td>
+                    <td>{{ feature.lastUpdated }}</td>
+                  </tr>
+                  <tr class="feature-table__expanded" *ngIf="isFeatureExpanded(feature)">
+                    <td [attr.colspan]="10">
+                      <div class="feature-detail">
+                        <div class="stats-grid" *ngIf="hasDistributionStats(feature)">
+                          <div class="stats-grid__item">
+                            <span class="stats-grid__label">Baseline Mean</span>
+                            <span class="stats-grid__value">{{ feature.baselineMean }}</span>
+                          </div>
+                          <div class="stats-grid__item">
+                            <span class="stats-grid__label">Current Mean</span>
+                            <span class="stats-grid__value">{{ feature.currentMean }}</span>
+                          </div>
+                          <div class="stats-grid__item">
+                            <span class="stats-grid__label">Baseline Std</span>
+                            <span class="stats-grid__value">{{ feature.baselineStd ?? '—' }}</span>
+                          </div>
+                          <div class="stats-grid__item">
+                            <span class="stats-grid__label">Current Std</span>
+                            <span class="stats-grid__value">{{ feature.currentStd ?? '—' }}</span>
+                          </div>
+                        </div>
+                        <p class="feature-detail__interpretation">{{ interpretationText(feature) }}</p>
+                      </div>
+                    </td>
+                  </tr>
+                </ng-container>
+              </tbody>
+            </table>
+          </div>
+        </app-card>
+      </div>
+
+      <!-- ===================== TAB 3: INFRASTRUCTURE ===================== -->
+      <div class="tab-content" *ngIf="activeTab === 'infrastructure'">
+        <div class="infra-grid">
+          <div class="service-card" *ngFor="let metric of infraMetrics" [class.service-card--critical]="metric.status === 'critical'">
+            <div class="service-card__top">
+              <div class="service-card__name-row">
+                <span class="service-card__pulse-dot" *ngIf="metric.status === 'critical'"></span>
+                <h3 class="service-card__name">{{ metric.service }}</h3>
+              </div>
+              <div class="service-card__badges">
+                <span class="status-badge" [ngClass]="statusClass(metric.status)">{{ metric.status }}</span>
+                <span class="uptime-pill">{{ metric.uptime }}% uptime</span>
+                <span class="sla-badge" *ngIf="metric.status === 'critical'">SLA Breach</span>
+              </div>
+            </div>
+
+            <div class="gauge-row">
+              <div class="gauge" *ngIf="gaugeView(metric.cpu) as gauge">
+                <svg viewBox="0 0 70 70" class="gauge__svg">
+                  <circle class="gauge__bg" cx="35" cy="35" r="28" stroke-width="6"></circle>
+                  <circle
+                    class="gauge__fg"
+                    [ngClass]="'gauge__fg--' + gauge.colorClass"
+                    cx="35" cy="35" r="28" stroke-width="6"
+                    [attr.stroke-dasharray]="gauge.circumference"
+                    [attr.stroke-dashoffset]="gauge.dashoffset"
+                  ></circle>
+                </svg>
+                <span class="gauge__label" [class.flash]="isFlashing(metric.id)">{{ gauge.label }}</span>
+                <span class="gauge__caption">CPU</span>
+              </div>
+              <div class="gauge" *ngIf="gaugeView(metric.memory) as gauge">
+                <svg viewBox="0 0 70 70" class="gauge__svg">
+                  <circle class="gauge__bg" cx="35" cy="35" r="28" stroke-width="6"></circle>
+                  <circle
+                    class="gauge__fg"
+                    [ngClass]="'gauge__fg--' + gauge.colorClass"
+                    cx="35" cy="35" r="28" stroke-width="6"
+                    [attr.stroke-dasharray]="gauge.circumference"
+                    [attr.stroke-dashoffset]="gauge.dashoffset"
+                  ></circle>
+                </svg>
+                <span class="gauge__label" [class.flash]="isFlashing(metric.id)">{{ gauge.label }}</span>
+                <span class="gauge__caption">Memory</span>
+              </div>
+              <div class="gauge" *ngIf="gaugeView(metric.errorRate) as gauge">
+                <svg viewBox="0 0 70 70" class="gauge__svg">
+                  <circle class="gauge__bg" cx="35" cy="35" r="28" stroke-width="6"></circle>
+                  <circle
+                    class="gauge__fg"
+                    [ngClass]="'gauge__fg--' + gauge.colorClass"
+                    cx="35" cy="35" r="28" stroke-width="6"
+                    [attr.stroke-dasharray]="gauge.circumference"
+                    [attr.stroke-dashoffset]="gauge.dashoffset"
+                  ></circle>
+                </svg>
+                <span class="gauge__label" [class.flash]="isFlashing(metric.id)">{{ gauge.label }}</span>
+                <span class="gauge__caption">Error Rate</span>
+              </div>
+            </div>
+
+            <div class="service-card__row">
+              <div class="service-card__latency">
+                <span
+                  class="service-card__latency-value"
+                  [ngClass]="'service-card__latency-value--' + metric.status"
+                  [class.flash]="isFlashing(metric.id)"
+                >{{ metric.latency }}ms</span>
+                <span class="service-card__latency-label">Latency</span>
+              </div>
+              <div class="service-card__requests">
+                <span class="service-card__requests-value">{{ metric.requestsPerMin }}/min {{ requestsTrendArrow(metric) }}</span>
+                <span class="service-card__requests-label">Requests</span>
+              </div>
+            </div>
+
+            <div class="sparkline sparkline--compact" [ngClass]="'sparkline--' + metric.status" *ngIf="infraSparkline(metric) as spark">
+              <svg viewBox="0 0 280 60" preserveAspectRatio="none" class="sparkline__svg">
+                <line class="sparkline__grid" x1="0" y1="15" x2="280" y2="15"></line>
+                <line class="sparkline__grid" x1="0" y1="30" x2="280" y2="30"></line>
+                <line class="sparkline__grid" x1="0" y1="45" x2="280" y2="45"></line>
+                <polygon class="sparkline__area" [attr.points]="spark.area"></polygon>
+                <polyline class="sparkline__line" [attr.points]="spark.polyline"></polyline>
+                <circle class="sparkline__dot" [attr.cx]="spark.lastX" [attr.cy]="spark.lastY" r="4"></circle>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== ALERT CENTER ===================== -->
+    <aside class="alert-center">
+      <div class="alert-center__header">
+        <h3 class="alert-center__title">Alert Center</h3>
+        <span class="alert-count-badge" *ngIf="unacknowledgedCount > 0">{{ unacknowledgedCount }}</span>
+      </div>
+
+      <div class="alert-filters">
+        <button type="button" class="alert-filter-pill" [class.alert-filter-pill--active]="alertFilter === 'all'" (click)="setAlertFilter('all')">All</button>
+        <button type="button" class="alert-filter-pill" [class.alert-filter-pill--active]="alertFilter === 'critical'" (click)="setAlertFilter('critical')">Critical</button>
+        <button type="button" class="alert-filter-pill" [class.alert-filter-pill--active]="alertFilter === 'warning'" (click)="setAlertFilter('warning')">Warning</button>
+        <button type="button" class="alert-filter-pill" [class.alert-filter-pill--active]="alertFilter === 'info'" (click)="setAlertFilter('info')">Info</button>
+      </div>
+
+      <button type="button" class="ack-all-btn" [disabled]="unacknowledgedCount === 0" (click)="acknowledgeAllAlerts()">Acknowledge All</button>
+
+      <div class="alert-list">
+        <div class="alert-item" *ngFor="let alert of filteredAlerts" [class.alert-item--acknowledged]="alert.acknowledged">
+          <span class="alert-item__icon" [ngClass]="'alert-item__icon--' + alert.severity">{{ severityIcon(alert.severity) }}</span>
+          <div class="alert-item__body">
+            <p class="alert-item__title">{{ alert.title }}</p>
+            <p class="alert-item__message">{{ alert.message }}</p>
+            <span class="alert-item__source">{{ alert.source }}</span>
+            <div class="alert-item__footer">
+              <span class="alert-item__time">{{ alert.timestamp }}</span>
+              <button type="button" class="alert-item__ack-btn" *ngIf="!alert.acknowledged" (click)="acknowledgeAlert(alert)">Acknowledge</button>
+              <span class="alert-item__ack-label" *ngIf="alert.acknowledged">✓ Acknowledged</span>
+            </div>
+          </div>
+        </div>
+        <div class="alert-list__empty" *ngIf="filteredAlerts.length === 0">No alerts match this filter.</div>
+      </div>
+
+      <a class="alert-center__audit-link" routerLink="/settings">View Full Audit Log →</a>
+    </aside>
+  </div>
+</div>

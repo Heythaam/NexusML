@@ -1,17 +1,20 @@
 import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 
 import { MonitoringRoutingModule } from './monitoring-routing.module';
 import { MonitoringComponent } from './monitoring.component';
+import { SharedModule } from '../../shared/shared.module';
 
-// TODO: import SharedModule once this feature needs common UI building blocks
 @NgModule({
   declarations: [
     MonitoringComponent
   ],
   imports: [
     CommonModule,
-    MonitoringRoutingModule
+    FormsModule,
+    MonitoringRoutingModule,
+    SharedModule
   ]
 })
 export class MonitoringModule { }

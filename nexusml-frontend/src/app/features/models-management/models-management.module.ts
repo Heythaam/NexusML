@@ -1,17 +1,20 @@
 import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 
 import { ModelsManagementRoutingModule } from './models-management-routing.module';
 import { ModelsManagementComponent } from './models-management.component';
+import { SharedModule } from '../../shared/shared.module';
 
-// TODO: import SharedModule once this feature needs common UI building blocks
 @NgModule({
   declarations: [
     ModelsManagementComponent
   ],
   imports: [
     CommonModule,
-    ModelsManagementRoutingModule
+    FormsModule,
+    ModelsManagementRoutingModule,
+    SharedModule
   ]
 })
 export class ModelsManagementModule { }
