@@ -5,5 +5,5 @@ export const environment = {
     realm: 'nexusml',
     clientId: 'nexusml-frontend'
   },
-  apiUrl: 'http://localhost:8080'
+  apiUrl: 'http://localhost:8085'
 };
