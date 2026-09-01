@@ -30,6 +30,12 @@ public class EncryptedCredential {
     @Column(nullable = false)
     private String type;
 
+    @Column
+    private String description;
+
+    @Column(nullable = false)
+    private String category;
+
     @Column(nullable = false, columnDefinition = "TEXT")
     private String encryptedValue;
 

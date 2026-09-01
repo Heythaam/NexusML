@@ -40,6 +40,11 @@ export class AuthService {
     return token?.['email'] || '';
   }
 
+  getKeycloakId(): string {
+    const token = this.keycloak.getKeycloakInstance()?.idTokenParsed;
+    return token?.['sub'] || '';
+  }
+
   getRoles(): string[] {
     return this.keycloak.getKeycloakInstance()
       ?.realmAccess?.roles || [];

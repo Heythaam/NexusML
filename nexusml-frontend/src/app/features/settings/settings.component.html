@@ -67,33 +67,71 @@
     </div>
 
     <div class="settings__column">
-      <app-card class="panel">
-        <div class="panel__header">
-          <div>
-            <h2 class="panel__title">Credentials Store</h2>
-            <p class="panel__subtitle">AES-256 encrypted</p>
+      <ng-container *ngIf="authService.isAdmin(); else credentialsRestricted">
+        <app-card class="panel">
+          <div class="panel__header">
+            <div>
+              <h2 class="panel__title">Credentials Store</h2>
+              <p class="panel__subtitle">AES-256 encrypted</p>
+            </div>
           </div>
-        </div>
 
-        <ul class="credential-list">
-          <li class="credential-list__item" *ngFor="let credential of credentials">
-            <div class="credential-list__identity">
-              <span class="credential-list__lock">🔒</span>
-              <div>
-                <div class="credential-list__name">{{ credential.name }}</div>
-                <div class="credential-list__type">{{ credential.type }}</div>
+          <div class="credentials-info-banner">
+            🔒 Credentials are AES-256 encrypted at rest.
+            Values are write-only — they cannot be retrieved
+            through this interface once saved.
+          </div>
+
+          <div class="credentials-loading" *ngIf="isLoadingCredentials">
+            <span class="spinner"></span> Loading credentials…
+          </div>
+
+          <ng-container *ngIf="!isLoadingCredentials">
+            <div class="credential-empty" *ngIf="credentials.length === 0">
+              <div class="credential-empty__icon">🔒</div>
+              <p class="credential-empty__text">No credentials stored yet</p>
+              <app-button variant="primary" (clicked)="openAddCredential()">Add your first credential</app-button>
+            </div>
+
+            <ng-container *ngIf="credentials.length > 0">
+              <div class="credential-group" *ngFor="let group of groupedCredentials">
+                <h3 class="credential-group__title">{{ group.icon }} {{ group.label }}</h3>
+                <div class="credential-grid">
+                  <div class="credential-card" *ngFor="let credential of group.items">
+                    <div class="credential-card__top">
+                      <span class="credential-card__icon">{{ credentialIcon(credential) }}</span>
+                      <span class="credential-card__name">{{ credential.name }}</span>
+                      <span class="credential-card__type-badge">{{ credential.type }}</span>
+                    </div>
+                    <p class="credential-card__description" *ngIf="credential.description">{{ credential.description }}</p>
+                    <div class="credential-card__category">{{ group.icon }} {{ group.label }}</div>
+                    <div class="credential-card__meta">
+                      by {{ credential.createdBy }} · created {{ credential.createdAt | date:'MMM d, y' }}
+                      <span *ngIf="credential.updatedAt"> · updated {{ credential.updatedAt | date:'MMM d, y' }}</span>
+                    </div>
+
+                    <div class="credential-card__value-row">
+                      <span class="credential-card__mask">••••••••••••</span>
+                    </div>
+
+                    <div class="credential-card__actions">
+                      <button type="button" class="icon-btn" title="Edit" (click)="editCredential(credential)">✏</button>
+                      <button type="button" class="icon-btn icon-btn--delete" title="Delete" (click)="deleteCredential(credential.id)">🗑</button>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div class="credential-list__actions">
-              <span class="credential-list__mask">••••••••</span>
-              <button type="button" class="icon-btn" title="Edit" (click)="editCredential(credential)">✎</button>
-              <button type="button" class="icon-btn icon-btn--delete" title="Delete" (click)="deleteCredential(credential)">🗑</button>
-            </div>
-          </li>
-        </ul>
 
-        <app-button variant="secondary" [fullWidth]="true" (clicked)="addCredential()">+ Add Credential</app-button>
-      </app-card>
+              <app-button variant="secondary" [fullWidth]="true" (clicked)="openAddCredential()">+ Add Credential</app-button>
+            </ng-container>
+          </ng-container>
+        </app-card>
+      </ng-container>
+      <ng-template #credentialsRestricted>
+        <app-card class="panel">
+          <p class="credentials-restricted">🔒 Credentials management is restricted to Admins</p>
+        </app-card>
+      </ng-template>
 
       <app-card class="panel">
         <div class="panel__header">
@@ -131,6 +169,82 @@
           </li>
         </ul>
       </app-card>
+    </div>
+  </div>
+</div>
+
+<div class="cred-modal-backdrop" *ngIf="showAddCredential" (click)="closeModal()">
+  <div class="cred-modal" (click)="$event.stopPropagation()">
+    <div class="cred-modal__header">
+      <h2 class="cred-modal__title">{{ editingCredential ? 'Edit Credential' : 'Add Credential' }}</h2>
+      <button type="button" class="cred-modal__close" (click)="closeModal()">✕</button>
+    </div>
+
+    <div class="cred-modal__body">
+      <div class="category-pills">
+        <button
+          type="button"
+          class="category-pill"
+          *ngFor="let cat of categories"
+          [class.category-pill--active]="modalCategory === cat.category"
+          (click)="selectCategory(cat.category)"
+        >{{ cat.icon }} {{ cat.label }}</button>
+      </div>
+
+      <div class="type-grid" *ngIf="modalCategory && !selectedTypeInfo">
+        <button
+          type="button"
+          class="type-card"
+          *ngFor="let type of typesForModalCategory"
+          (click)="selectType(type)"
+        >
+          <span class="type-card__icon">{{ type.icon }}</span>
+          <span class="type-card__name">{{ type.name }}</span>
+          <span class="type-card__description">{{ type.description }}</span>
+        </button>
+      </div>
+
+      <div class="cred-form" *ngIf="selectedTypeInfo">
+        <button type="button" class="text-btn cred-form__change-type" (click)="changeType()">← Change type</button>
+
+        <label class="cred-form__label">
+          Name
+          <input type="text" class="field" [(ngModel)]="formName" name="formName" />
+        </label>
+
+        <label class="cred-form__label">
+          Description
+          <input type="text" class="field" [(ngModel)]="formDescription" name="formDescription" />
+        </label>
+
+        <label class="cred-form__label">
+          Value
+          <input
+            type="password"
+            class="field"
+            [(ngModel)]="formValue"
+            name="formValue"
+            autocomplete="new-password"
+            [placeholder]="editingCredential ? 'Enter new value to replace existing' : selectedTypeInfo.placeholder"
+          />
+          <p class="cred-form__warning">
+            ⚠ This value cannot be retrieved after saving.
+            Make sure you have it stored securely elsewhere.
+          </p>
+        </label>
+
+        <details class="cred-form__hint">
+          <summary>Why do I need this?</summary>
+          <p>{{ selectedTypeInfo.description }}</p>
+        </details>
+      </div>
+    </div>
+
+    <div class="cred-modal__footer">
+      <app-button variant="secondary" (clicked)="closeModal()">Cancel</app-button>
+      <app-button variant="primary" [disabled]="!isFormValid || savingCredential" (clicked)="submitCredentialForm()">
+        {{ savingCredential ? 'Saving…' : 'Save Encrypted' }}
+      </app-button>
     </div>
   </div>
 </div>

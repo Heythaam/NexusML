@@ -274,59 +274,135 @@
   }
 }
 
-.credential-list {
+.credentials-restricted {
+  margin: 0;
+  padding: 8px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.credentials-info-banner {
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: var(--accent-tint);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.credentials-loading {
+  display: flex;
+  align-items: center;
+  padding: 12px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.credential-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 32px 16px;
+  text-align: center;
+
+  &__icon {
+    font-size: 28px;
+  }
+
+  &__text {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+}
+
+.credential-group {
+  margin-bottom: 16px;
+
+  &__title {
+    margin: 0 0 10px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+}
+
+.credential-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.credential-card {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin: 0 0 16px;
-  padding: 0;
-  list-style: none;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
 
-  &__item {
+  &__top {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 14px 16px;
-    border-radius: var(--radius);
-    background: var(--bg-secondary);
+    flex-wrap: wrap;
+    gap: 8px;
   }
 
-  &__identity {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
-  }
-
-  &__lock {
-    flex-shrink: 0;
-    font-size: 12px;
-    color: var(--text-muted);
+  &__icon {
+    font-size: 14px;
   }
 
   &__name {
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--text-primary);
   }
 
-  &__type {
+  &__type-badge {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--accent-tint);
+    color: var(--accent);
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 11px;
+  }
+
+  &__description {
+    margin: 0;
     font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  &__category {
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+
+  &__meta {
+    font-size: 11px;
     color: var(--text-muted);
   }
 
-  &__actions {
+  &__value-row {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex-shrink: 0;
+    flex-wrap: wrap;
   }
 
   &__mask {
     font-size: 13px;
     letter-spacing: 2px;
     color: var(--text-muted);
+  }
+
+  &__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 4px;
   }
 }
 
@@ -473,4 +549,195 @@
   .settings__grid {
     grid-template-columns: 1fr;
   }
+}
+
+.cred-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--overlay);
+}
+
+.cred-modal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 560px;
+  max-height: 85vh;
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  &__close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 14px;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+    }
+  }
+
+  &__body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+  }
+
+  &__footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+}
+
+.category-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.category-pill {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+
+  &--active {
+    border-color: var(--accent);
+    background: var(--accent-tint);
+    color: var(--accent);
+  }
+}
+
+.type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.type-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+
+  &:hover {
+    border-color: var(--accent);
+    background: var(--accent-tint);
+  }
+
+  &__icon {
+    font-size: 18px;
+  }
+
+  &__name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  &__description {
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+}
+
+.cred-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+
+  &__change-type {
+    align-self: flex-start;
+  }
+
+  &__label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+
+  &__warning {
+    margin: 6px 0 0;
+    font-size: 12px;
+    font-style: italic;
+    color: var(--warning);
+  }
+
+  &__hint {
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+    font-size: 12px;
+    color: var(--text-secondary);
+
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    p {
+      margin: 8px 0 0;
+    }
+  }
+}
+
+.cred-form .field {
+  width: 100%;
 }

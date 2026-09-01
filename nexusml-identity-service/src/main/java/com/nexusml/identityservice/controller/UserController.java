@@ -32,7 +32,8 @@ public class UserController {
 
     @PostMapping("/sync")
     public ResponseEntity<AppUser> syncUser(
-            @RequestBody UserSyncRequest request) {
+            @RequestBody UserSyncRequest request,
+            JwtAuthenticationToken authentication) {
         AppUser user = userService.syncFromKeycloak(
             request.keycloakId(),
             request.username(),

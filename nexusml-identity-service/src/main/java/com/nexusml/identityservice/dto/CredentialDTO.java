@@ -6,6 +6,9 @@ public record CredentialDTO(
     String id,
     String name,
     String type,
+    String description,
+    String category,
     String createdBy,
-    LocalDateTime createdAt
+    LocalDateTime createdAt,
+    LocalDateTime updatedAt
 ) {}
