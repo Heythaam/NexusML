@@ -1,0 +1,23 @@
+<header class="header">
+  <div class="header__brand">
+    <span class="header__logo-mark">N</span>
+    <span class="header__logo">NexusML</span>
+    <span class="header__divider"></span>
+    <span class="header__subtitle">ML Platform</span>
+  </div>
+
+  <div class="header__actions">
+    <button
+      type="button"
+      class="theme-toggle"
+      [class.theme-toggle--dark]="isDarkTheme"
+      role="switch"
+      [attr.aria-checked]="isDarkTheme"
+      [attr.aria-label]="isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'"
+      (click)="toggleTheme()"
+    >
+      <span class="theme-toggle__thumb"></span>
+    </button>
+    <div class="header__avatar">MJ</div>
+  </div>
+</header>

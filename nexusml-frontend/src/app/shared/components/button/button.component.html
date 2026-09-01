@@ -1,0 +1,10 @@
+<button
+  class="btn"
+  [ngClass]="'btn--' + variant"
+  [class.btn--full]="fullWidth"
+  [type]="type"
+  [disabled]="disabled"
+  (click)="onClick()"
+>
+  <ng-content></ng-content>
+</button>

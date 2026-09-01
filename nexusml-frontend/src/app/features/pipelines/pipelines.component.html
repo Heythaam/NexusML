@@ -1,0 +1,157 @@
+<div class="pipelines">
+  <div class="pipelines__header">
+    <div>
+      <h1 class="pipelines__title">Pipelines</h1>
+      <p class="pipelines__subtitle">Manage and monitor your Airflow pipelines</p>
+    </div>
+    <app-button variant="primary">+ New Pipeline</app-button>
+  </div>
+
+  <div class="pipelines__toolbar">
+    <input
+      type="text"
+      class="pipelines__search"
+      placeholder="Search pipelines..."
+      [(ngModel)]="searchTerm"
+    />
+
+    <select class="pipelines__select" [(ngModel)]="statusFilter">
+      <option value="all">All</option>
+      <option value="running">Running</option>
+      <option value="success">Success</option>
+      <option value="failed">Failed</option>
+      <option value="paused">Paused</option>
+    </select>
+
+    <select class="pipelines__select" [(ngModel)]="ownerFilter">
+      <option value="all">All</option>
+      <option *ngFor="let owner of owners" [value]="owner">{{ owner }}</option>
+    </select>
+
+    <span class="pipelines__count">Showing {{ filteredPipelines.length }} of {{ totalCount }} pipelines</span>
+  </div>
+
+  <app-card class="pipelines__table-card">
+    <table class="pipelines-table">
+      <thead>
+        <tr>
+          <th>Pipeline Name</th>
+          <th>Status</th>
+          <th>Schedule</th>
+          <th>Last Run</th>
+          <th>Duration</th>
+          <th>Tasks</th>
+          <th>Owner</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr
+          *ngFor="let pipeline of filteredPipelines"
+          class="pipelines-table__row"
+          [class.pipelines-table__row--failed]="pipeline.status === 'failed'"
+          (click)="openDetail(pipeline)"
+        >
+          <td>
+            <div class="pipelines-table__name">{{ pipeline.name }}</div>
+            <div class="pipelines-table__tags">
+              <span class="tag" *ngFor="let tag of pipeline.tags">{{ tag }}</span>
+            </div>
+          </td>
+          <td>
+            <span class="badge" [ngClass]="statusBadgeClass(pipeline.status)">
+              <span class="badge__dot" *ngIf="pipeline.status === 'running'"></span>
+              {{ pipeline.status }}
+            </span>
+          </td>
+          <td>{{ pipeline.schedule }}</td>
+          <td>{{ pipeline.lastRun }}</td>
+          <td>{{ pipeline.duration }}</td>
+          <td>
+            <div class="progress">
+              <span class="progress__label">{{ pipeline.tasksCompleted }}/{{ pipeline.tasks }}</span>
+              <div class="progress__track">
+                <div class="progress__fill" [style.width.%]="progress(pipeline)"></div>
+              </div>
+            </div>
+          </td>
+          <td>
+            <div class="avatar" [title]="pipeline.owner">{{ initials(pipeline.owner) }}</div>
+          </td>
+          <td>
+            <div class="row-actions">
+              <button type="button" class="icon-btn icon-btn--run" title="Run" (click)="runPipeline(pipeline, $event)">▶</button>
+              <button type="button" class="icon-btn icon-btn--pause" title="Pause" (click)="pausePipeline(pipeline, $event)">⏸</button>
+              <button type="button" class="icon-btn icon-btn--delete" title="Delete" (click)="deletePipeline(pipeline, $event)">🗑</button>
+            </div>
+          </td>
+        </tr>
+        <tr *ngIf="filteredPipelines.length === 0">
+          <td class="pipelines-table__empty" colspan="8">No pipelines match your filters.</td>
+        </tr>
+      </tbody>
+    </table>
+  </app-card>
+</div>
+
+<div class="detail-overlay" *ngIf="selectedPipeline" (click)="closeDetail()"></div>
+
+<aside class="detail-panel" [class.detail-panel--open]="selectedPipeline">
+  <ng-container *ngIf="selectedPipeline as pipeline">
+    <button type="button" class="detail-panel__close" (click)="closeDetail()" aria-label="Close">×</button>
+
+    <div class="detail-panel__heading">
+      <h2 class="detail-panel__title">{{ pipeline.name }}</h2>
+      <span class="badge" [ngClass]="statusBadgeClass(pipeline.status)">{{ pipeline.status }}</span>
+    </div>
+
+    <section class="detail-section">
+      <h3 class="detail-section__title">Details</h3>
+      <div class="detail-grid">
+        <div class="detail-grid__item">
+          <span class="detail-grid__label">Schedule</span>
+          <span class="detail-grid__value">{{ pipeline.schedule }}</span>
+        </div>
+        <div class="detail-grid__item">
+          <span class="detail-grid__label">Owner</span>
+          <span class="detail-grid__value">{{ pipeline.owner }}</span>
+        </div>
+        <div class="detail-grid__item">
+          <span class="detail-grid__label">Last Run</span>
+          <span class="detail-grid__value">{{ pipeline.lastRun }}</span>
+        </div>
+        <div class="detail-grid__item">
+          <span class="detail-grid__label">Duration</span>
+          <span class="detail-grid__value">{{ pipeline.duration }}</span>
+        </div>
+        <div class="detail-grid__item">
+          <span class="detail-grid__label">Tasks</span>
+          <span class="detail-grid__value">{{ pipeline.tasksCompleted }}/{{ pipeline.tasks }}</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="detail-section">
+      <h3 class="detail-section__title">Tags</h3>
+      <div class="detail-tags">
+        <span class="tag" *ngFor="let tag of pipeline.tags">{{ tag }}</span>
+      </div>
+    </section>
+
+    <section class="detail-section">
+      <h3 class="detail-section__title">Task Progress</h3>
+      <ul class="task-list">
+        <li class="task-list__item" *ngFor="let task of selectedPipelineTasks">
+          <span class="task-list__icon" [ngClass]="'task-list__icon--' + task.state">{{ taskIcon(task.state) }}</span>
+          <span class="task-list__name">{{ task.name }}</span>
+        </li>
+      </ul>
+    </section>
+
+    <div class="detail-panel__actions">
+      <app-button variant="primary" [fullWidth]="true" (clicked)="runPipeline(pipeline)">Run Pipeline</app-button>
+      <app-button variant="secondary" [fullWidth]="true" (clicked)="pausePipeline(pipeline)">Pause</app-button>
+      <app-button variant="danger" [fullWidth]="true" (clicked)="deletePipeline(pipeline)">Delete</app-button>
+    </div>
+  </ng-container>
+</aside>

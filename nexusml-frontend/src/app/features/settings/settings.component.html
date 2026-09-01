@@ -1,0 +1,138 @@
+<div class="settings">
+  <div class="settings__header">
+    <div>
+      <h1 class="settings__title">Settings</h1>
+      <p class="settings__subtitle">Configure your NexusML integrations and credentials</p>
+    </div>
+    <app-button variant="primary" [disabled]="!hasUnsavedChanges || saving" (clicked)="saveAll()">
+      <span class="settings__save-dot" *ngIf="hasUnsavedChanges"></span>
+      {{ saving ? 'Saving...' : 'Save All Changes' }}
+    </app-button>
+  </div>
+
+  <div class="settings__grid">
+    <div class="settings__column">
+      <div class="settings__warning-bar" *ngIf="hasUnsavedChanges">You have unsaved changes</div>
+
+      <div class="section-header">
+        <h2 class="section-header__title">Integrations</h2>
+        <span class="count-badge">{{ integrations.length }}</span>
+      </div>
+
+      <div class="integration-list">
+        <div
+          class="integration-card"
+          *ngFor="let integration of integrations"
+          [class.integration-card--dirty]="integration.dirty"
+        >
+          <div class="integration-card__top">
+            <div class="integration-card__identity">
+              <div class="integration-card__icon">{{ integration.icon }}</div>
+              <div>
+                <div class="integration-card__name">{{ integration.name }}</div>
+                <div class="integration-card__description">{{ integration.description }}</div>
+              </div>
+            </div>
+            <div class="integration-card__meta">
+              <span class="badge" [ngClass]="statusBadgeClass(integration.status)">{{ integration.status }}</span>
+              <app-button variant="secondary" [disabled]="integration.testing" (clicked)="testConnection(integration)">
+                <span class="spinner" *ngIf="integration.testing"></span>
+                {{ integration.testing ? 'Testing...' : 'Test connection' }}
+              </app-button>
+            </div>
+          </div>
+
+          <div class="integration-card__fields">
+            <input
+              type="text"
+              class="field field--url"
+              placeholder="http://localhost"
+              [(ngModel)]="integration.url"
+              (ngModelChange)="onFieldChange(integration)"
+            />
+            <input
+              type="number"
+              class="field field--port"
+              placeholder="8080"
+              [(ngModel)]="integration.port"
+              (ngModelChange)="onFieldChange(integration)"
+            />
+          </div>
+
+          <div class="integration-card__footer" *ngIf="integration.lastTested">
+            Last tested: {{ integration.lastTested }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings__column">
+      <app-card class="panel">
+        <div class="panel__header">
+          <div>
+            <h2 class="panel__title">Credentials Store</h2>
+            <p class="panel__subtitle">AES-256 encrypted</p>
+          </div>
+        </div>
+
+        <ul class="credential-list">
+          <li class="credential-list__item" *ngFor="let credential of credentials">
+            <div class="credential-list__identity">
+              <span class="credential-list__lock">🔒</span>
+              <div>
+                <div class="credential-list__name">{{ credential.name }}</div>
+                <div class="credential-list__type">{{ credential.type }}</div>
+              </div>
+            </div>
+            <div class="credential-list__actions">
+              <span class="credential-list__mask">••••••••</span>
+              <button type="button" class="icon-btn" title="Edit" (click)="editCredential(credential)">✎</button>
+              <button type="button" class="icon-btn icon-btn--delete" title="Delete" (click)="deleteCredential(credential)">🗑</button>
+            </div>
+          </li>
+        </ul>
+
+        <app-button variant="secondary" [fullWidth]="true" (clicked)="addCredential()">+ Add Credential</app-button>
+      </app-card>
+
+      <app-card class="panel">
+        <div class="panel__header">
+          <div>
+            <h2 class="panel__title">Role Management</h2>
+            <p class="panel__subtitle">{{ roles.length }} roles configured</p>
+          </div>
+        </div>
+
+        <ul class="role-list">
+          <li class="role-list__item" *ngFor="let role of roles">
+            <div>
+              <div class="role-list__name">{{ role.name }}</div>
+              <div class="role-list__description">{{ role.description }}</div>
+            </div>
+            <div class="role-list__actions">
+              <span class="count-pill">{{ role.userCount }} users</span>
+              <button type="button" class="text-btn" (click)="manageRole(role)">Manage</button>
+            </div>
+          </li>
+        </ul>
+      </app-card>
+
+      <app-card class="panel">
+        <div class="panel__header">
+          <h2 class="panel__title">Recent Audit Events</h2>
+          <button type="button" class="panel__link">View full log →</button>
+        </div>
+
+        <ul class="audit-list">
+          <li class="audit-list__item" *ngFor="let event of auditEvents">
+            <span class="audit-list__dot" [ngClass]="'audit-list__dot--' + event.dot"></span>
+            <span class="audit-list__text">{{ event.text }}</span>
+            <span class="audit-list__time">{{ event.time }}</span>
+          </li>
+        </ul>
+      </app-card>
+    </div>
+  </div>
+</div>
+
+<app-toast></app-toast>

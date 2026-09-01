@@ -1,0 +1,69 @@
+<div class="dashboard">
+  <div class="dashboard__header">
+    <div>
+      <h1 class="dashboard__title">Dashboard</h1>
+      <p class="dashboard__subtitle">ML Lifecycle Overview</p>
+    </div>
+    <div class="dashboard__header-actions">
+      <button type="button" class="icon-btn" aria-label="Refresh dashboard" (click)="refresh()">⟳</button>
+      <span class="dashboard__updated">Last updated: {{ lastUpdated }}</span>
+    </div>
+  </div>
+
+  <div class="dashboard__stats">
+    <app-card class="stat-card" *ngFor="let stat of stats">
+      <div class="stat-card__top">
+        <span class="stat-card__label">{{ stat.label }}</span>
+        <div
+          class="stat-card__icon"
+          [style.background]="'var(--' + stat.iconBg + ')'"
+          [style.color]="'var(--' + stat.iconColor + ')'"
+        >{{ stat.icon }}</div>
+      </div>
+      <p class="stat-card__value">{{ stat.value }}</p>
+      <span class="stat-card__trend" [ngClass]="'stat-card__trend--' + stat.trendDirection">
+        {{ stat.trendDirection === 'up' ? '↑' : '↓' }} {{ stat.trend }}
+      </span>
+    </app-card>
+  </div>
+
+  <div class="dashboard__grid">
+    <app-card class="panel">
+      <div class="panel__header">
+        <h3 class="panel__title">Recent Pipelines</h3>
+        <a class="panel__link" routerLink="/pipelines">View all →</a>
+      </div>
+      <table class="pipelines-table">
+        <thead>
+          <tr>
+            <th>Pipeline Name</th>
+            <th>Status</th>
+            <th>Last Run</th>
+            <th>Duration</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let pipeline of pipelines">
+            <td class="pipelines-table__name">{{ pipeline.name }}</td>
+            <td><span class="badge" [ngClass]="statusClass(pipeline.status)">{{ pipeline.status }}</span></td>
+            <td>{{ pipeline.lastRun }}</td>
+            <td>{{ pipeline.duration }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </app-card>
+
+    <app-card class="panel">
+      <div class="panel__header">
+        <h3 class="panel__title">Recent Activity</h3>
+      </div>
+      <ul class="activity-list">
+        <li class="activity-list__item" *ngFor="let activity of activities">
+          <span class="activity-list__dot" [ngClass]="'activity-list__dot--' + activity.dot"></span>
+          <span class="activity-list__text">{{ activity.text }}</span>
+          <span class="activity-list__time">{{ activity.time }}</span>
+        </li>
+      </ul>
+    </app-card>
+  </div>
+</div>

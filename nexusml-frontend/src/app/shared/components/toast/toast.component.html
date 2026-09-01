@@ -1,0 +1,9 @@
+<div
+  class="toast"
+  *ngIf="toast"
+  [class.toast--visible]="visible"
+  [ngClass]="'toast--' + toast.type"
+>
+  <span class="toast__icon">{{ toast.type === 'success' ? '✓' : '✗' }}</span>
+  <span class="toast__message">{{ toast.message }}</span>
+</div>
