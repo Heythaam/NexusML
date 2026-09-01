@@ -1,0 +1,31 @@
+server:
+  port: 8888
+
+spring:
+  application:
+    name: config-server
+  cloud:
+    config:
+      server:
+        git:
+          uri: ${CONFIG_REPO_URI:https://github.com/Heythaam/nexusml-config}
+          username: ${GITHUB_USERNAME:Heythaam}
+          password: ${GITHUB_PAT}
+          default-label: ${CONFIG_REPO_BRANCH:main}
+          clone-on-start: true
+          search-paths: '.'
+          timeout: 10
+          force-pull: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,env
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    org.springframework.cloud.config: DEBUG

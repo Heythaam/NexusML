@@ -69,6 +69,61 @@
     font-size: 13px;
     font-weight: 600;
   }
+
+  &__user {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__username {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  &__logout {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+
+    &:hover {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+    }
+  }
+}
+
+.role-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+.role-admin {
+  background: var(--danger-tint);
+  color: var(--danger);
+}
+
+.role-data_scientist {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.role-viewer {
+  background: var(--bg-secondary);
+  color: var(--text-muted);
 }
 
 .theme-toggle {

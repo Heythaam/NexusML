@@ -1,13 +1,34 @@
-import { NgModule, Optional, SkipSelf, ModuleWithProviders } from '@angular/core';
+import { APP_INITIALIZER, NgModule, Optional, SkipSelf, ModuleWithProviders } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
-import { HTTP_INTERCEPTORS } from '@angular/common/http';
+import { HTTP_INTERCEPTORS, HttpClientModule } from '@angular/common/http';
+import { KeycloakAngularModule, KeycloakService } from 'keycloak-angular';
 
 import { HeaderComponent } from './layout/header/header.component';
 import { SidebarComponent } from './layout/sidebar/sidebar.component';
 import { FooterComponent } from './layout/footer/footer.component';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
 import { ErrorInterceptor } from './interceptors/error.interceptor';
+import { environment } from '../../environments/environment';
+
+export function initializeKeycloak(keycloak: KeycloakService) {
+  return () =>
+    keycloak.init({
+      config: {
+        url: environment.keycloak.url,
+        realm: environment.keycloak.realm,
+        clientId: environment.keycloak.clientId
+      },
+      initOptions: {
+        onLoad: 'login-required',
+        silentCheckSsoRedirectUri:
+          window.location.origin + '/silent-check-sso.html',
+        checkLoginIframe: false
+      },
+      enableBearerInterceptor: false,
+      bearerExcludedUrls: []
+    });
+}
 
 @NgModule({
   declarations: [
@@ -17,7 +38,9 @@ import { ErrorInterceptor } from './interceptors/error.interceptor';
   ],
   imports: [
     CommonModule,
-    RouterModule
+    RouterModule,
+    HttpClientModule,
+    KeycloakAngularModule
   ],
   exports: [
     HeaderComponent,
@@ -32,11 +55,16 @@ export class CoreModule {
     }
   }
 
-  // TODO: register auth/logger/notification singleton providers alongside the interceptors
   static forRoot(): ModuleWithProviders<CoreModule> {
     return {
       ngModule: CoreModule,
       providers: [
+        {
+          provide: APP_INITIALIZER,
+          useFactory: initializeKeycloak,
+          multi: true,
+          deps: [KeycloakService]
+        },
         { provide: HTTP_INTERCEPTORS, useClass: AuthInterceptor, multi: true },
         { provide: HTTP_INTERCEPTORS, useClass: ErrorInterceptor, multi: true }
       ]

@@ -5,3 +5,16 @@ Thumbs.db
 # IDE
 .idea/
 *.iml
+
+# Environment files — never commit these
+.env
+*.env
+**/.env
+
+# Maven
+**/target/
+**/.mvn/wrapper/maven-wrapper.jar
+
+# IntelliJ
+**/.idea/
+**/*.iml

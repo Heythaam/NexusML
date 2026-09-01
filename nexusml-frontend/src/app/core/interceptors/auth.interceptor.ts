@@ -5,15 +5,30 @@ import {
   HttpEvent,
   HttpInterceptor
 } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, from, switchMap } from 'rxjs';
+import { KeycloakService } from 'keycloak-angular';
 
 @Injectable()
 export class AuthInterceptor implements HttpInterceptor {
 
-  constructor() {}
+  constructor(private keycloak: KeycloakService) {}
 
-  intercept(request: HttpRequest<unknown>, next: HttpHandler): Observable<HttpEvent<unknown>> {
-    // TODO: attach auth token to outgoing requests
-    return next.handle(request);
+  intercept(
+    req: HttpRequest<unknown>,
+    next: HttpHandler
+  ): Observable<HttpEvent<unknown>> {
+    return from(this.keycloak.getToken()).pipe(
+      switchMap(token => {
+        if (token) {
+          const cloned = req.clone({
+            setHeaders: {
+              Authorization: `Bearer ${token}`
+            }
+          });
+          return next.handle(cloned);
+        }
+        return next.handle(req);
+      })
+    );
   }
 }

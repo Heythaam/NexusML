@@ -18,6 +18,19 @@
     >
       <span class="theme-toggle__thumb"></span>
     </button>
-    <div class="header__avatar">MJ</div>
+    <div class="header__user">
+      <span class="header__username">{{ username }}</span>
+      <span class="role-badge role-{{ currentRole | lowercase }}">
+        {{ currentRole | titlecase }}
+      </span>
+    </div>
+    <div class="header__avatar" title="{{ fullName }}">{{ initials }}</div>
+    <button
+      type="button"
+      class="header__logout"
+      aria-label="Log out"
+      title="Log out"
+      (click)="logout()"
+    >⏻</button>
   </div>
 </header>
