@@ -10,13 +10,14 @@
     <button
       type="button"
       class="theme-toggle"
-      [class.theme-toggle--dark]="isDarkTheme"
       role="switch"
       [attr.aria-checked]="isDarkTheme"
       [attr.aria-label]="isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'"
+      title="{{ isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme' }}"
       (click)="toggleTheme()"
     >
-      <span class="theme-toggle__thumb"></span>
+      <span class="theme-toggle__icon" *ngIf="!isDarkTheme">☀</span>
+      <span class="theme-toggle__icon" *ngIf="isDarkTheme">☾</span>
     </button>
     <div class="header__user">
       <span class="header__username">{{ username }}</span>

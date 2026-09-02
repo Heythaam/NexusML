@@ -77,9 +77,7 @@
           </div>
 
           <div class="credentials-info-banner">
-            🔒 Credentials are AES-256 encrypted at rest.
-            Values are write-only — they cannot be retrieved
-            through this interface once saved.
+            Credentials are AES-256 encrypted. Values are write-only.
           </div>
 
           <div class="credentials-loading" *ngIf="isLoadingCredentials">
@@ -88,25 +86,23 @@
 
           <ng-container *ngIf="!isLoadingCredentials">
             <div class="credential-empty" *ngIf="credentials.length === 0">
-              <div class="credential-empty__icon">🔒</div>
               <p class="credential-empty__text">No credentials stored yet</p>
               <app-button variant="primary" (clicked)="openAddCredential()">Add your first credential</app-button>
             </div>
 
             <ng-container *ngIf="credentials.length > 0">
               <div class="credential-group" *ngFor="let group of groupedCredentials">
-                <h3 class="credential-group__title">{{ group.icon }} {{ group.label }}</h3>
+                <h3 class="credential-group__title">{{ group.label }}</h3>
                 <div class="credential-grid">
                   <div class="credential-card" *ngFor="let credential of group.items">
                     <div class="credential-card__top">
-                      <span class="credential-card__icon">{{ credentialIcon(credential) }}</span>
                       <span class="credential-card__name">{{ credential.name }}</span>
                       <span class="credential-card__type-badge">{{ credential.type }}</span>
                     </div>
                     <p class="credential-card__description" *ngIf="credential.description">{{ credential.description }}</p>
-                    <div class="credential-card__category">{{ group.icon }} {{ group.label }}</div>
+                    <div class="credential-card__category">{{ group.label }}</div>
                     <div class="credential-card__meta">
-                      by {{ credential.createdBy }} · created {{ credential.createdAt | date:'MMM d, y' }}
+                      by {{ getCredentialOwner(credential.createdBy) }} · created {{ credential.createdAt | date:'MMM d, y' }}
                       <span *ngIf="credential.updatedAt"> · updated {{ credential.updatedAt | date:'MMM d, y' }}</span>
                     </div>
 
@@ -122,14 +118,14 @@
                 </div>
               </div>
 
-              <app-button variant="secondary" [fullWidth]="true" (clicked)="openAddCredential()">+ Add Credential</app-button>
+              <app-button variant="secondary" [fullWidth]="true" (clicked)="openAddCredential()">Add Credential</app-button>
             </ng-container>
           </ng-container>
         </app-card>
       </ng-container>
       <ng-template #credentialsRestricted>
         <app-card class="panel">
-          <p class="credentials-restricted">🔒 Credentials management is restricted to Admins</p>
+          <p class="credentials-restricted">Credentials management is restricted to Admins</p>
         </app-card>
       </ng-template>
 
@@ -162,8 +158,7 @@
         </div>
 
         <ul class="audit-list">
-          <li class="audit-list__item" *ngFor="let event of auditEvents">
-            <span class="audit-list__dot" [ngClass]="'audit-list__dot--' + event.dot"></span>
+          <li class="audit-list__item" *ngFor="let event of auditEvents" [ngClass]="'audit-list__item--' + event.dot">
             <span class="audit-list__text">{{ event.text }}</span>
             <span class="audit-list__time">{{ event.time }}</span>
           </li>
@@ -188,7 +183,7 @@
           *ngFor="let cat of categories"
           [class.category-pill--active]="modalCategory === cat.category"
           (click)="selectCategory(cat.category)"
-        >{{ cat.icon }} {{ cat.label }}</button>
+        ><span class="category-pill__icon">{{ cat.icon }}</span>{{ cat.label }}</button>
       </div>
 
       <div class="type-grid" *ngIf="modalCategory && !selectedTypeInfo">
@@ -198,7 +193,6 @@
           *ngFor="let type of typesForModalCategory"
           (click)="selectType(type)"
         >
-          <span class="type-card__icon">{{ type.icon }}</span>
           <span class="type-card__name">{{ type.name }}</span>
           <span class="type-card__description">{{ type.description }}</span>
         </button>
@@ -228,7 +222,7 @@
             [placeholder]="editingCredential ? 'Enter new value to replace existing' : selectedTypeInfo.placeholder"
           />
           <p class="cred-form__warning">
-            ⚠ This value cannot be retrieved after saving.
+            This value cannot be retrieved after saving.
             Make sure you have it stored securely elsewhere.
           </p>
         </label>

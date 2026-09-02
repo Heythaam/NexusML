@@ -42,7 +42,7 @@ public class CredentialController {
             JwtAuthenticationToken authentication) {
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(credentialService.createCredential(
-                request, authentication.getName()));
+                request, authentication.getToken().getClaimAsString("preferred_username")));
     }
 
     @PutMapping("/{id}")

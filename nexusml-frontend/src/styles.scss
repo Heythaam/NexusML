@@ -99,4 +99,29 @@ body {
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   background-color: var(--bg-secondary);
   color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  color: var(--text-primary);
+}
+
+.page-subtitle {
+  margin: 2px 0 0;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }

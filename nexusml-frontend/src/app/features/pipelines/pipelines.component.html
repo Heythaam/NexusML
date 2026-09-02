@@ -5,8 +5,8 @@
       <p class="pipelines__subtitle">Manage and monitor your Airflow pipelines</p>
     </div>
     <div class="pipelines__header-actions">
-      <app-button variant="primary">+ New Pipeline</app-button>
-      <button type="button" class="trigger-dag-btn" (click)="openTriggerModal()">▶ Run MLOps Pipeline</button>
+      <app-button variant="primary">New Pipeline</app-button>
+      <button type="button" class="trigger-dag-btn" (click)="openTriggerModal()">▶ Run Pipeline</button>
     </div>
   </div>
 
@@ -14,167 +14,429 @@
     <input
       type="text"
       class="pipelines__search"
-      placeholder="Search pipelines..."
+      placeholder="Search DAGs by ID or description..."
       [(ngModel)]="searchTerm"
     />
 
     <select class="pipelines__select" [(ngModel)]="statusFilter">
       <option value="all">All</option>
-      <option value="running">Running</option>
-      <option value="success">Success</option>
-      <option value="failed">Failed</option>
+      <option value="active">Active</option>
       <option value="paused">Paused</option>
     </select>
 
-    <select class="pipelines__select" [(ngModel)]="ownerFilter">
-      <option value="all">All</option>
-      <option *ngFor="let owner of owners" [value]="owner">{{ owner }}</option>
-    </select>
+    <button type="button" class="refresh-btn" title="Refresh" [disabled]="isLoading" (click)="refresh()">
+      <span class="refresh-btn__icon" [class.refresh-btn__icon--spinning]="isLoading">↻</span>
+    </button>
 
-    <span class="pipelines__count">Showing {{ filteredPipelines.length }} of {{ totalCount }} pipelines</span>
+    <span class="pipelines__count">Showing {{ filteredDags.length }} of {{ totalCount }} DAGs</span>
   </div>
 
-  <app-card class="pipelines__table-card">
+  <div class="sync-indicator">
+    <span class="sync-indicator__text">Synced {{ syncDisplay }}s ago</span>
+  </div>
+
+  <div
+    class="active-run"
+    *ngIf="activeRun"
+    [class.active-run--success]="activeRun.status === 'success'"
+    [class.active-run--failed]="activeRun.status === 'failed'"
+  >
+    <div class="active-run__header">
+      <div class="active-run__heading">
+        <span class="active-run__icon" *ngIf="activeRun.status === 'success'">✓</span>
+        <span class="active-run__icon" *ngIf="activeRun.status === 'failed'">✗</span>
+        <span class="active-run__title">
+          {{ activeRun.status === 'running' ? 'Pipeline Running' : activeRun.status === 'success' ? 'Pipeline completed' : 'Pipeline failed' }}
+          <small class="active-run__failed-task" *ngIf="activeRun.status === 'failed' && getFailedTask()"> — failed at {{ getFailedTask() }}</small>
+        </span>
+        <span class="active-run__run-id">{{ activeRun.dagRunId }}</span>
+        <span class="badge" [ngClass]="statusBadgeClass(activeRun.status)">{{ activeRun.status }}</span>
+      </div>
+      <div class="active-run__header-right">
+        <span class="active-run__meta">triggered by {{ activeRun.triggeredBy }} · {{ activeRun.triggeredAt | date:'short' }}</span>
+        <button type="button" class="dismiss-btn" (click)="dismissActiveRun()">Dismiss</button>
+      </div>
+    </div>
+
+    <div class="active-run__progress">
+      <div class="progress__track">
+        <div
+          *ngIf="activeRun.totalTasks > 0"
+          class="progress__fill"
+          [style.width.%]="activeRunProgress"
+        ></div>
+        <div
+          *ngIf="activeRun.totalTasks === 0"
+          class="progress__fill progress__fill--indeterminate"
+        ></div>
+      </div>
+      <span class="active-run__progress-label">
+        {{ activeRun.totalTasks > 0 ? (activeRun.completedTasks + ' of ' + activeRun.totalTasks + ' tasks completed') : 'Waiting for task count…' }}
+      </span>
+    </div>
+
+    <div class="run-actions">
+      <button
+        type="button"
+        class="run-action-btn run-action-btn--warning"
+        (click)="toggleRunPause()"
+        *ngIf="activeRun.status === 'running' && canManage"
+      >
+        <span *ngIf="!isRunDagPaused()">⏸ Pause DAG</span>
+        <span *ngIf="isRunDagPaused()">▶ Resume DAG</span>
+      </button>
+
+      <button
+        type="button"
+        class="run-action-btn run-action-btn--danger"
+        (click)="markRunAsFailed()"
+        *ngIf="activeRun.status === 'running' && isAdmin"
+      >
+        ✗ Mark as Failed
+      </button>
+
+      <a
+        class="run-action-btn run-action-btn--secondary"
+        [href]="airflowDagUrl(activeRun.dagId)"
+        target="_blank"
+        rel="noopener"
+      >
+        ↗ Open in Airflow
+      </a>
+    </div>
+
+    <div class="task-list">
+      <div *ngFor="let task of displayTasks"
+           class="task-row"
+           [class.task-row--success]="getTaskState(task.taskId) === 'success'"
+           [class.task-row--failed]="getTaskState(task.taskId) === 'failed'"
+           [class.task-row--running]="getTaskState(task.taskId) === 'running'"
+           [class.task-row--clickable]="getTaskState(task.taskId) !== 'none'"
+           [title]="getTaskState(task.taskId) !== 'none' ? 'Click to view logs' : ''"
+           (click)="openTaskLogs(task.taskId)">
+
+        <span class="task-icon"
+              [class.task-icon--success]="getTaskState(task.taskId) === 'success'"
+              [class.task-icon--failed]="getTaskState(task.taskId) === 'failed'"
+              [class.task-icon--running]="getTaskState(task.taskId) === 'running'"
+              [class.task-icon--warning]="getTaskState(task.taskId) === 'upstream_failed'">
+          <span *ngIf="getTaskState(task.taskId) === 'running'" class="spinning">↻</span>
+          <span *ngIf="getTaskState(task.taskId) !== 'running'">
+            {{ getTaskIcon(getTaskState(task.taskId)) }}
+          </span>
+        </span>
+
+        <span class="task-label">
+          {{ task.label }}
+        </span>
+
+        <span class="task-state"
+              [class]="'badge badge--' + getTaskStateClass(getTaskState(task.taskId))">
+          {{ getTaskState(task.taskId) === 'none' ? 'Pending' :
+             getTaskState(task.taskId) === 'upstream_failed' ? 'Skipped' :
+             getTaskState(task.taskId) }}
+        </span>
+
+        <span class="task-duration text-muted">
+          {{ getTaskDuration(task.taskId) }}
+        </span>
+      </div>
+
+      <p class="task-list__empty" *ngIf="displayTasks.length === 0">Waiting for task status from Airflow…</p>
+    </div>
+
+    <div class="active-run__footer" *ngIf="activeRun.status === 'success'">
+      ✓ Pipeline completed — <a routerLink="/models-management">results available in Models page</a>
+    </div>
+    <div class="active-run__footer" *ngIf="activeRun.status === 'failed'">
+      ✗ Pipeline failed — <a href="http://localhost:8080" target="_blank" rel="noopener">check Airflow logs</a>
+    </div>
+  </div>
+
+  <!-- ===================== TASK LOGS MODAL ===================== -->
+  <div class="logs-modal-overlay" *ngIf="showLogsModal" (click)="closeLogsModal()">
+    <div class="logs-modal" (click)="$event.stopPropagation()">
+      <div class="logs-modal__header">
+        <div class="logs-modal__title">
+          <span class="logs-modal__task-id">
+            {{ (selectedTaskForLogs && TASK_LABELS[selectedTaskForLogs]) || selectedTaskForLogs }}
+          </span>
+          <span class="badge" [ngClass]="'badge--' + getTaskStateClass(getTaskState(selectedTaskForLogs || ''))">
+            {{ getTaskState(selectedTaskForLogs || '') }}
+          </span>
+        </div>
+        <button type="button" class="logs-modal__close" (click)="closeLogsModal()" aria-label="Close">×</button>
+      </div>
+
+      <div *ngIf="isLoadingLogs" class="logs-modal__loading">
+        <span class="spinning">↻</span> Loading logs from Airflow...
+      </div>
+
+      <div *ngIf="logsError && !isLoadingLogs" class="logs-modal__error">
+        ⚠ {{ logsError }}
+      </div>
+
+      <div *ngIf="!isLoadingLogs && !logsError" class="logs-modal__content">
+        <div class="logs-modal__toolbar">
+          <span class="text-muted logs-modal__run-id">{{ activeRun?.dagRunId }}</span>
+          <button type="button" class="logs-modal__copy" (click)="copyLogs()">Copy</button>
+        </div>
+        <pre class="logs-modal__pre">{{ taskLogs }}</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== ERROR STATE ===================== -->
+  <app-card class="state-card" *ngIf="error && !isLoading">
+    <div class="state-card__content">
+      <div class="state-card__icon">⚠</div>
+      <p class="state-card__message">{{ error }}</p>
+      <app-button variant="primary" (clicked)="loadDags()">Retry</app-button>
+    </div>
+  </app-card>
+
+  <app-card class="pipelines__table-card" *ngIf="!error">
     <table class="pipelines-table">
       <thead>
         <tr>
-          <th>Pipeline Name</th>
-          <th>Status</th>
+          <th>DAG ID</th>
+          <th>Description</th>
+          <th>Tags</th>
+          <th>Owners</th>
           <th>Schedule</th>
+          <th>Status</th>
           <th>Last Run</th>
-          <th>Duration</th>
-          <th>Tasks</th>
-          <th>Owner</th>
+          <th>Last Run Date</th>
           <th>Actions</th>
         </tr>
       </thead>
       <tbody>
-        <tr
-          *ngFor="let pipeline of filteredPipelines"
-          class="pipelines-table__row"
-          [class.pipelines-table__row--failed]="pipeline.status === 'failed'"
-          (click)="openDetail(pipeline)"
-        >
-          <td>
-            <div class="pipelines-table__name">{{ pipeline.name }}</div>
-            <div class="pipelines-table__tags">
-              <span class="tag" *ngFor="let tag of pipeline.tags">{{ tag }}</span>
-            </div>
-          </td>
-          <td>
-            <span class="badge" [ngClass]="statusBadgeClass(pipeline.status)">
-              <span class="badge__dot" *ngIf="pipeline.status === 'running'"></span>
-              {{ pipeline.status }}
-            </span>
-          </td>
-          <td>{{ pipeline.schedule }}</td>
-          <td>{{ pipeline.lastRun }}</td>
-          <td>{{ pipeline.duration }}</td>
-          <td>
-            <div class="progress">
-              <span class="progress__label">{{ pipeline.tasksCompleted }}/{{ pipeline.tasks }}</span>
-              <div class="progress__track">
-                <div class="progress__fill" [style.width.%]="progress(pipeline)"></div>
+        <!-- ===================== LOADING SKELETON ===================== -->
+        <ng-container *ngIf="isLoading">
+          <tr class="pipelines-table__row skeleton-row" *ngFor="let n of [1,2,3,4,5]">
+            <td><div class="skeleton-block" style="width: 70%"></div></td>
+            <td><div class="skeleton-block" style="width: 90%"></div></td>
+            <td><div class="skeleton-block" style="width: 60%"></div></td>
+            <td><div class="skeleton-block skeleton-block--round"></div></td>
+            <td><div class="skeleton-block" style="width: 50%"></div></td>
+            <td><div class="skeleton-block" style="width: 40%"></div></td>
+            <td><div class="skeleton-block" style="width: 40%"></div></td>
+            <td><div class="skeleton-block" style="width: 50%"></div></td>
+            <td><div class="skeleton-block" style="width: 60%"></div></td>
+          </tr>
+        </ng-container>
+
+        <ng-container *ngIf="!isLoading">
+          <tr
+            *ngFor="let dag of filteredDags"
+            class="pipelines-table__row"
+            [class.pipelines-table__row--paused]="dag.isPaused"
+            [class.pipelines-table__row--error]="dag.hasImportErrors"
+            (click)="openDagDetail(dag)"
+          >
+            <td>
+              <div class="pipelines-table__name">
+                {{ dag.dagId }}
+                <span class="row-flag row-flag--paused" *ngIf="dag.isPaused">Paused</span>
+                <span class="row-flag row-flag--error" *ngIf="dag.hasImportErrors">⚠ Import Error</span>
               </div>
-            </div>
-          </td>
-          <td>
-            <div class="avatar" [title]="pipeline.owner">{{ initials(pipeline.owner) }}</div>
-          </td>
-          <td>
-            <div class="row-actions">
-              <button type="button" class="icon-btn icon-btn--run" title="Run" (click)="runPipeline(pipeline, $event)">▶</button>
-              <button type="button" class="icon-btn icon-btn--pause" title="Pause" (click)="pausePipeline(pipeline, $event)">⏸</button>
-              <button type="button" class="icon-btn icon-btn--delete" title="Delete" (click)="deletePipeline(pipeline, $event)">🗑</button>
-            </div>
-          </td>
-        </tr>
-        <tr *ngIf="filteredPipelines.length === 0">
-          <td class="pipelines-table__empty" colspan="8">No pipelines match your filters.</td>
-        </tr>
+            </td>
+            <td>
+              <span class="dag-description">{{ dag.description || dag.displayName || '—' }}</span>
+            </td>
+            <td>
+              <div class="pipelines-table__tags">
+                <span class="tag" *ngFor="let tag of dag.tags">{{ tag.name }}</span>
+              </div>
+            </td>
+            <td>
+              <div class="owner-avatars">
+                <div class="avatar" *ngFor="let owner of dag.owners.slice(0, 3)" [title]="owner">{{ initials(owner) }}</div>
+                <span class="owner-avatars__more" *ngIf="dag.owners.length > 3">+{{ dag.owners.length - 3 }}</span>
+              </div>
+            </td>
+            <td class="text-muted">{{ dag.timetableDescription || 'Manual' }}</td>
+            <td>
+              <span class="badge" [ngClass]="dagStatusBadgeClass(dag)">{{ dag.isPaused ? 'paused' : 'active' }}</span>
+            </td>
+            <td>
+              <span class="badge" [ngClass]="lastRunBadgeClass(dag.dagId)">
+                <span class="badge__dot" *ngIf="getLastRunStatus(dag.dagId) === 'running'"></span>
+                {{ getLastRunStatus(dag.dagId) }}
+              </span>
+            </td>
+            <td class="text-muted">{{ relativeTime(getLastRunDate(dag.dagId)) }}</td>
+            <td>
+              <div class="row-actions" *ngIf="canManage">
+                <button
+                  type="button"
+                  class="icon-btn icon-btn--run"
+                  [disabled]="dag.isPaused"
+                  [title]="dag.isPaused ? 'Unpause this DAG first' : 'Trigger'"
+                  (click)="openTriggerModal(dag.dagId); $event.stopPropagation()"
+                >▶</button>
+                <button
+                  type="button"
+                  class="icon-btn"
+                  [class.icon-btn--pause]="!dag.isPaused"
+                  [class.icon-btn--unpause]="dag.isPaused"
+                  [title]="dag.isPaused ? 'Unpause' : 'Pause'"
+                  (click)="togglePause(dag, $event)"
+                >{{ dag.isPaused ? '▶' : '⏸' }}</button>
+              </div>
+            </td>
+          </tr>
+
+          <tr *ngIf="filteredDags.length === 0">
+            <td class="pipelines-table__empty" colspan="9">
+              <p>No DAGs match your search.</p>
+              <button type="button" class="text-btn" (click)="clearFilters()">Clear filters</button>
+            </td>
+          </tr>
+        </ng-container>
       </tbody>
     </table>
   </app-card>
 </div>
 
-<div class="detail-overlay" *ngIf="selectedPipeline" (click)="closeDetail()"></div>
+<div class="detail-overlay" *ngIf="selectedDagPanel" (click)="closeDagDetail()"></div>
 
-<aside class="detail-panel" [class.detail-panel--open]="selectedPipeline">
-  <ng-container *ngIf="selectedPipeline as pipeline">
-    <button type="button" class="detail-panel__close" (click)="closeDetail()" aria-label="Close">×</button>
+<aside class="detail-panel" [class.detail-panel--open]="selectedDagPanel">
+  <ng-container *ngIf="selectedDagPanel as dag">
+    <button type="button" class="detail-panel__close" (click)="closeDagDetail()" aria-label="Close">×</button>
 
     <div class="detail-panel__heading">
-      <h2 class="detail-panel__title">{{ pipeline.name }}</h2>
-      <span class="badge" [ngClass]="statusBadgeClass(pipeline.status)">{{ pipeline.status }}</span>
+      <h2 class="detail-panel__title">{{ dag.dagId }}</h2>
+      <span class="badge" [ngClass]="dagStatusBadgeClass(dag)">{{ dag.isPaused ? 'paused' : 'active' }}</span>
     </div>
 
     <section class="detail-section">
-      <h3 class="detail-section__title">Details</h3>
+      <h3 class="detail-section__title">DAG Info</h3>
       <div class="detail-grid">
+        <div class="detail-grid__item detail-grid__item--full">
+          <span class="detail-grid__label">Description</span>
+          <span class="detail-grid__value">{{ dag.description || dag.displayName || '—' }}</span>
+        </div>
         <div class="detail-grid__item">
           <span class="detail-grid__label">Schedule</span>
-          <span class="detail-grid__value">{{ pipeline.schedule }}</span>
+          <span class="detail-grid__value">{{ dag.timetableDescription || 'Manual' }}</span>
         </div>
         <div class="detail-grid__item">
-          <span class="detail-grid__label">Owner</span>
-          <span class="detail-grid__value">{{ pipeline.owner }}</span>
+          <span class="detail-grid__label">Owners</span>
+          <span class="detail-grid__value">{{ dag.owners.length ? dag.owners.join(', ') : '—' }}</span>
         </div>
-        <div class="detail-grid__item">
-          <span class="detail-grid__label">Last Run</span>
-          <span class="detail-grid__value">{{ pipeline.lastRun }}</span>
-        </div>
-        <div class="detail-grid__item">
-          <span class="detail-grid__label">Duration</span>
-          <span class="detail-grid__value">{{ pipeline.duration }}</span>
-        </div>
-        <div class="detail-grid__item">
-          <span class="detail-grid__label">Tasks</span>
-          <span class="detail-grid__value">{{ pipeline.tasksCompleted }}/{{ pipeline.tasks }}</span>
-        </div>
+      </div>
+      <div class="detail-tags" *ngIf="dag.tags.length">
+        <span class="tag" *ngFor="let tag of dag.tags">{{ tag.name }}</span>
       </div>
     </section>
 
     <section class="detail-section">
-      <h3 class="detail-section__title">Tags</h3>
-      <div class="detail-tags">
-        <span class="tag" *ngFor="let tag of pipeline.tags">{{ tag }}</span>
-      </div>
-    </section>
-
-    <section class="detail-section">
-      <h3 class="detail-section__title">Task Progress</h3>
-      <ul class="task-list">
-        <li class="task-list__item" *ngFor="let task of selectedPipelineTasks">
-          <span class="task-list__icon" [ngClass]="'task-list__icon--' + task.state">{{ taskIcon(task.state) }}</span>
-          <span class="task-list__name">{{ task.name }}</span>
+      <h3 class="detail-section__title">Recent Runs</h3>
+      <ul class="run-list" *ngIf="recentRuns(dag.dagId).length > 0; else noRuns">
+        <li class="run-list__item" *ngFor="let run of recentRuns(dag.dagId)">
+          <span class="run-list__id" [title]="run.dagRunId">{{ run.dagRunId }}</span>
+          <span class="badge" [ngClass]="'badge--' + run.state">{{ run.state }}</span>
+          <span class="run-list__date">{{ relativeTime(run.startDate) }}</span>
+          <span class="run-list__duration">{{ runDuration(run) }}</span>
         </li>
       </ul>
+      <ng-template #noRuns>
+        <p class="run-list__empty">No runs yet</p>
+      </ng-template>
+      <a class="detail-section__link" [href]="airflowDagUrl(dag.dagId)" target="_blank" rel="noopener">View in Airflow →</a>
     </section>
 
-    <div class="detail-panel__actions">
-      <app-button variant="primary" [fullWidth]="true" (clicked)="runPipeline(pipeline)">Run Pipeline</app-button>
-      <app-button variant="secondary" [fullWidth]="true" (clicked)="pausePipeline(pipeline)">Pause</app-button>
-      <app-button variant="danger" [fullWidth]="true" (clicked)="deletePipeline(pipeline)">Delete</app-button>
-    </div>
+    <section class="detail-section" *ngIf="canManage">
+      <h3 class="detail-section__title">Actions</h3>
+      <div class="detail-panel__actions">
+        <app-button
+          variant="primary"
+          [fullWidth]="true"
+          [disabled]="dag.isPaused"
+          [title]="dag.isPaused ? 'Unpause this DAG first' : 'Trigger'"
+          (clicked)="triggerFromPanel(dag)"
+        >▶ Trigger Pipeline</app-button>
+        <button
+          type="button"
+          class="panel-toggle-btn"
+          [class.panel-toggle-btn--warning]="!dag.isPaused"
+          [class.panel-toggle-btn--success]="dag.isPaused"
+          (click)="togglePause(dag, $event)"
+        >{{ dag.isPaused ? '▶ Unpause DAG' : '⏸ Pause DAG' }}</button>
+        <a class="panel-link-btn" [href]="airflowDagUrl(dag.dagId)" target="_blank" rel="noopener">Open in Airflow ↗</a>
+      </div>
+    </section>
   </ng-container>
 </aside>
 
-<!-- ===================== TRIGGER MLOPS PIPELINE MODAL ===================== -->
+<!-- ===================== TRIGGER PIPELINE MODAL ===================== -->
 <div class="trigger-overlay" *ngIf="showTriggerModal" (click)="closeTriggerModal()"></div>
 
 <div class="trigger-modal" *ngIf="showTriggerModal">
   <button type="button" class="trigger-modal__close" (click)="closeTriggerModal()" aria-label="Close" [disabled]="triggering">×</button>
-  <h2 class="trigger-modal__title">Run MLOps Pipeline</h2>
-  <p class="trigger-modal__subtitle">Triggers the full talys_mlops_pipeline DAG in Airflow</p>
+  <h2 class="trigger-modal__title">Run Pipeline</h2>
+  <p class="trigger-modal__subtitle">Select a DAG and trigger a new run in Airflow</p>
 
   <div class="trigger-form">
-    <label class="trigger-form__field">
+    <div class="trigger-form__field">
+      <span class="trigger-form__label">DAG</span>
+      <div class="dag-loading" *ngIf="isLoadingDags">
+        <span class="dvc-spinner"></span> Loading DAGs…
+      </div>
+      <select
+        class="trigger-form__select"
+        *ngIf="!isLoadingDags"
+        [(ngModel)]="selectedDagId"
+        (ngModelChange)="onDagSelected()"
+        [disabled]="triggering || availableDags.length === 0"
+      >
+        <option *ngIf="availableDags.length === 0" [ngValue]="null" disabled>No active DAGs found</option>
+        <option *ngFor="let dag of availableDags" [value]="dag.dagId">
+          {{ dag.dagId }} — {{ dag.description || dag.displayName || 'No description' }}
+        </option>
+      </select>
+
+      <div class="dag-detail" *ngIf="selectedDag as dag">
+        <div class="dag-detail__row">
+          <span class="dag-detail__label">Schedule</span>
+          <span class="dag-detail__value">{{ dag.timetableDescription || dag.scheduleInterval || 'Manual' }}</span>
+        </div>
+        <div class="dag-detail__row">
+          <span class="dag-detail__label">Owners</span>
+          <span class="dag-detail__value">{{ dag.owners.length ? dag.owners.join(', ') : '—' }}</span>
+        </div>
+        <div class="dag-detail__row" *ngIf="dag.tags.length">
+          <span class="dag-detail__label">Tags</span>
+          <span class="dag-detail__tags">
+            <span class="tag" *ngFor="let tag of dag.tags">{{ tag.name }}</span>
+          </span>
+        </div>
+        <div class="dag-detail__row">
+          <span class="dag-detail__label">Last runs</span>
+          <span class="dag-detail__value">{{ selectedDagRunsCount ?? '—' }}</span>
+        </div>
+      </div>
+    </div>
+
+    <label class="trigger-form__field" *ngIf="isMlopsDag">
       <span class="trigger-form__label">Input Dataset</span>
       <select class="trigger-form__select" [(ngModel)]="selectedDatasetName" [disabled]="triggering">
         <option *ngFor="let dataset of triggerDatasets" [value]="dataset.name">
           {{ dataset.name }} · {{ dataset.format }} · {{ dataset.size }}
         </option>
       </select>
+    </label>
+
+    <label class="trigger-form__field" *ngIf="selectedDagId && !isMlopsDag">
+      <span class="trigger-form__label">Additional Config (JSON)</span>
+      <textarea
+        class="trigger-form__textarea"
+        rows="4"
+        placeholder="{ }"
+        [(ngModel)]="additionalConfJson"
+        [disabled]="triggering"
+      ></textarea>
     </label>
 
     <div class="trigger-form__field">
@@ -184,7 +446,7 @@
       </div>
     </div>
 
-    <div class="trigger-form__field">
+    <div class="trigger-form__field" *ngIf="isMlopsDag">
       <span class="trigger-form__label">Pipeline Steps Preview</span>
       <ul class="dag-steps-preview">
         <li class="dag-steps-preview__item" *ngFor="let task of dagTasks">
@@ -199,7 +461,7 @@
 
   <div class="trigger-modal__footer">
     <app-button variant="secondary" [disabled]="triggering" (clicked)="closeTriggerModal()">Cancel</app-button>
-    <app-button variant="primary" [disabled]="triggering" (clicked)="triggerDag()">
+    <app-button variant="primary" [disabled]="triggering || !selectedDagId" (clicked)="triggerDag()">
       <span class="dvc-spinner" *ngIf="triggering"></span>{{ triggering ? 'Triggering...' : 'Trigger DAG ▶' }}
     </app-button>
   </div>

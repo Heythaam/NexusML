@@ -39,7 +39,7 @@
   <ng-container *ngIf="activeTab === 'registry'">
     <div class="pending-banner" *ngIf="pendingModels.length">
       <span class="pending-banner__text">
-        ⚠ {{ pendingModels.length }} model promotion request{{ pendingModels.length > 1 ? 's' : '' }} pending your review
+        {{ pendingModels.length }} model promotion request{{ pendingModels.length > 1 ? 's' : '' }} pending review
       </span>
       <button type="button" class="pending-banner__action" (click)="reviewNow(pendingModels[0])">Review Now</button>
     </div>

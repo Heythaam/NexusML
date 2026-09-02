@@ -1,30 +1,15 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
+import { Subscription } from 'rxjs';
 
 import { ToastService } from '../../core/services/toast.service';
+import { PipelineApiService } from '../../core/services/pipeline-api.service';
+import { AuthService } from '../../core/auth/auth.service';
+import { AirflowDag, PipelineRun, TaskStatus, TriggerPipelineRequest } from '../../core/models/pipeline.model';
 
-export type PipelineStatus = 'running' | 'success' | 'failed' | 'paused';
-type StatusFilter = 'all' | PipelineStatus;
-type TaskState = 'success' | 'running' | 'failed' | 'pending';
+const MLOPS_DAG_ID = 'talys_mlops_pipeline';
 
-interface Pipeline {
-  id: string;
-  name: string;
-  status: PipelineStatus;
-  schedule: string;
-  lastRun: string;
-  duration: string;
-  tasks: number;
-  tasksCompleted: number;
-  owner: string;
-  tags: string[];
-  isDagRun?: boolean;
-}
-
-interface PipelineTask {
-  name: string;
-  state: TaskState;
-}
+type DagStatusFilter = 'all' | 'active' | 'paused';
 
 interface DagTaskDef {
   id: string;
@@ -36,21 +21,6 @@ interface TriggerDataset {
   format: string;
   size: string;
 }
-
-const TASK_NAME_POOL = [
-  'data_ingestion',
-  'data_validation',
-  'feature_extraction',
-  'feature_engineering',
-  'model_train',
-  'model_evaluation',
-  'model_registration',
-  'deployment',
-  'notification',
-  'schema_check',
-  'data_export',
-  'cleanup'
-];
 
 const DAG_TASKS: DagTaskDef[] = [
   { id: 'quality_gate', description: 'Data quality validation' },
@@ -72,8 +42,21 @@ const TRIGGER_DATASETS: TriggerDataset[] = [
   { name: 'customer_profiles.parquet', format: 'Parquet', size: '890 MB' }
 ];
 
-const DAG_STEP_INTERVAL_MS = 2000;
-const CURRENT_USER = 'alice';
+const TASK_LABEL_MAP: Record<string, string> = {
+  quality_gate: 'Quality Gate',
+  hdfs_upload: 'HDFS Upload',
+  spark_ingest: 'Spark Ingest',
+  spark_preprocess: 'Spark Preprocess',
+  spark_validate: 'Spark Validate',
+  hdfs_download: 'HDFS Download',
+  train_model: 'Train Model',
+  fix_mlflow_paths: 'Fix MLflow Paths',
+  optimize_hyperparams: 'Optimize Hyperparams',
+  evaluate_model: 'Evaluate Model',
+  monitor_drift: 'Monitor Drift'
+};
+
+const AIRFLOW_BASE_URL = 'http://localhost:8080';
 
 @Component({
   selector: 'app-pipelines',
@@ -81,44 +64,67 @@ const CURRENT_USER = 'alice';
   styleUrl: './pipelines.component.scss'
 })
 export class PipelinesComponent implements OnInit, OnDestroy {
-  pipelines: Pipeline[] = [
-    { id: 'fraud-detection-pipeline', name: 'fraud-detection-pipeline', status: 'running', schedule: 'Every 6h', lastRun: '2 min ago', duration: '4m 32s', tasks: 8, tasksCompleted: 5, owner: 'alice', tags: ['finance', 'ml'] },
-    { id: 'customer-churn-model', name: 'customer-churn-model', status: 'success', schedule: 'Daily 2AM', lastRun: '1h ago', duration: '12m 08s', tasks: 12, tasksCompleted: 12, owner: 'bob', tags: ['crm', 'ml'] },
-    { id: 'image-classifier-v2', name: 'image-classifier-v2', status: 'success', schedule: 'On push', lastRun: '3h ago', duration: '8m 44s', tasks: 6, tasksCompleted: 6, owner: 'alice', tags: ['vision'] },
-    { id: 'nlp-sentiment-analysis', name: 'nlp-sentiment-analysis', status: 'failed', schedule: 'Every 12h', lastRun: '5h ago', duration: '2m 11s', tasks: 9, tasksCompleted: 3, owner: 'carol', tags: ['nlp'] },
-    { id: 'recommendation-engine', name: 'recommendation-engine', status: 'running', schedule: 'Every 2h', lastRun: '8h ago', duration: '31m 05s', tasks: 15, tasksCompleted: 11, owner: 'bob', tags: ['recsys', 'ml'] },
-    { id: 'data-quality-checker', name: 'data-quality-checker', status: 'success', schedule: 'Hourly', lastRun: '10h ago', duration: '1m 20s', tasks: 4, tasksCompleted: 4, owner: 'alice', tags: ['data'] },
-    { id: 'model-retraining-job', name: 'model-retraining-job', status: 'paused', schedule: 'Weekly Mon', lastRun: '2d ago', duration: '45m 00s', tasks: 20, tasksCompleted: 0, owner: 'carol', tags: ['ml'] },
-    { id: 'feature-engineering-v3', name: 'feature-engineering-v3', status: 'success', schedule: 'Daily 6AM', lastRun: '1d ago', duration: '18m 33s', tasks: 10, tasksCompleted: 10, owner: 'bob', tags: ['data', 'ml'] },
-    { id: 'anomaly-detection', name: 'anomaly-detection', status: 'failed', schedule: 'Every 30min', lastRun: '2d ago', duration: '0m 45s', tasks: 5, tasksCompleted: 1, owner: 'alice', tags: ['monitoring'] },
-    { id: 'batch-inference-job', name: 'batch-inference-job', status: 'paused', schedule: 'Daily 11PM', lastRun: '3d ago', duration: '22m 10s', tasks: 8, tasksCompleted: 0, owner: 'carol', tags: ['ml'] }
-  ];
-
-  owners = ['alice', 'bob', 'carol'];
+  dags: AirflowDag[] = [];
+  dagRuns: Map<string, any[]> = new Map();
+  isLoading = false;
+  error: string | null = null;
 
   searchTerm = '';
-  statusFilter: StatusFilter = 'all';
-  ownerFilter = 'all';
+  statusFilter: DagStatusFilter = 'all';
 
-  selectedPipeline: Pipeline | null = null;
-  selectedPipelineTasks: PipelineTask[] = [];
+  selectedDagPanel: AirflowDag | null = null;
 
   readonly dagTasks: DagTaskDef[] = DAG_TASKS;
   readonly triggerDatasets: TriggerDataset[] = TRIGGER_DATASETS;
+  readonly TASK_ORDER: string[] = DAG_TASKS.map(t => t.id);
+  readonly TASK_LABELS: Record<string, string> = TASK_LABEL_MAP;
 
   showTriggerModal = false;
   triggering = false;
   selectedDatasetName = TRIGGER_DATASETS[0].name;
+
+  availableDags: AirflowDag[] = [];
+  isLoadingDags = false;
+  selectedDagId: string | null = null;
+  selectedDagRunsCount: number | null = null;
+  additionalConfJson = '';
+
+  activeRun: PipelineRun | null = null;
+  private pollingSubscription: Subscription | null = null;
+
+  dagRefreshInterval: any = null;
+  lastSyncTime: Date = new Date();
+  syncDisplayInterval: any = null;
+  syncDisplay = 0;
+
+  // Logs modal state
+  showLogsModal = false;
+  selectedTaskForLogs: string | null = null;
+  taskLogs = '';
+  isLoadingLogs = false;
+  logsError: string | null = null;
 
   private readonly cleanups: Array<() => void> = [];
 
   constructor(
     private readonly toastService: ToastService,
     private readonly route: ActivatedRoute,
-    private readonly router: Router
+    private readonly router: Router,
+    private readonly pipelineApiService: PipelineApiService,
+    private readonly authService: AuthService
   ) {}
 
   ngOnInit(): void {
+    this.loadDags();
+
+    this.dagRefreshInterval = setInterval(() => {
+      this.loadDags(true);
+    }, 10000);
+
+    this.syncDisplayInterval = setInterval(() => {
+      this.syncDisplay = this.secondsSinceSync;
+    }, 1000);
+
     if (this.route.snapshot.queryParamMap.get('trigger') === 'true') {
       this.openTriggerModal();
       this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
@@ -127,82 +133,226 @@ export class PipelinesComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.cleanups.forEach(cleanup => cleanup());
+    this.pollingSubscription?.unsubscribe();
+    if (this.dagRefreshInterval) {
+      clearInterval(this.dagRefreshInterval);
+    }
+    if (this.syncDisplayInterval) {
+      clearInterval(this.syncDisplayInterval);
+    }
   }
 
-  get filteredPipelines(): Pipeline[] {
-    const term = this.searchTerm.trim().toLowerCase();
-    return this.pipelines.filter(pipeline => {
-      const matchesSearch = !term || pipeline.name.toLowerCase().includes(term);
-      const matchesStatus = this.statusFilter === 'all' || pipeline.status === this.statusFilter;
-      const matchesOwner = this.ownerFilter === 'all' || pipeline.owner === this.ownerFilter;
-      return matchesSearch && matchesStatus && matchesOwner;
+  get canManage(): boolean {
+    return this.authService.isAdmin() || this.authService.isDataScientist();
+  }
+
+  get isAdmin(): boolean {
+    return this.authService.isAdmin();
+  }
+
+  // ─── DAG table ─────────────────────────────────────────────
+
+  loadDags(background = false): void {
+    if (!background) {
+      this.isLoading = true;
+    }
+    this.error = null;
+    this.pipelineApiService.getAllDags().subscribe({
+      next: (dags) => {
+        this.dags = dags;
+        this.isLoading = false;
+        this.lastSyncTime = new Date();
+        this.syncDisplay = 0;
+        dags.forEach(dag => this.loadLastRun(dag.dagId));
+      },
+      error: (err) => {
+        this.error = 'Failed to load DAGs from Airflow';
+        this.isLoading = false;
+        console.error(err);
+      }
+    });
+  }
+
+  get secondsSinceSync(): number {
+    return Math.floor((new Date().getTime() - this.lastSyncTime.getTime()) / 1000);
+  }
+
+  loadLastRun(dagId: string): void {
+    this.pipelineApiService.getDagRuns(dagId).subscribe({
+      next: (runs) => {
+        this.dagRuns.set(dagId, runs);
+      },
+      error: () => {}
+    });
+  }
+
+  getLastRun(dagId: string): any | null {
+    const runs = this.dagRuns.get(dagId);
+    return runs && runs.length > 0 ? runs[0] : null;
+  }
+
+  getLastRunStatus(dagId: string): string {
+    const run = this.getLastRun(dagId);
+    return run?.state || 'never';
+  }
+
+  getLastRunDate(dagId: string): string | null {
+    const run = this.getLastRun(dagId);
+    return run?.startDate || null;
+  }
+
+  get filteredDags(): AirflowDag[] {
+    return this.dags.filter(dag => {
+      const matchesSearch = !this.searchTerm ||
+        dag.dagId.toLowerCase().includes(this.searchTerm.toLowerCase()) ||
+        dag.description?.toLowerCase().includes(this.searchTerm.toLowerCase());
+      const matchesStatus = !this.statusFilter ||
+        this.statusFilter === 'all' ||
+        (this.statusFilter === 'paused' && dag.isPaused) ||
+        (this.statusFilter === 'active' && !dag.isPaused);
+      return matchesSearch && matchesStatus;
     });
   }
 
   get totalCount(): number {
-    return this.pipelines.length;
+    return this.dags.length;
   }
 
-  get dagRunConfigJson(): string {
-    return JSON.stringify(
-      {
-        dag_id: 'talys_mlops_pipeline',
-        conf: {
-          RAW_DATA_FILE: this.selectedDatasetName,
-          MLFLOW_TRACKING_URI: 'http://mlflow:5000',
-          objective: 'f1_score'
-        }
+  clearFilters(): void {
+    this.searchTerm = '';
+    this.statusFilter = 'all';
+  }
+
+  refresh(): void {
+    this.loadDags();
+  }
+
+  togglePause(dag: AirflowDag, event: Event): void {
+    event.stopPropagation();
+    this.pipelineApiService.togglePause(dag.dagId, !dag.isPaused).subscribe({
+      next: () => {
+        dag.isPaused = !dag.isPaused;
+        this.toastService.show(
+          dag.isPaused ? `${dag.dagId} paused` : `${dag.dagId} unpaused`,
+          'success'
+        );
+        // Reload this DAG's runs to reflect new state
+        this.loadLastRun(dag.dagId);
+        // Also reload the full DAG list after 1s to get fresh state from Airflow
+        setTimeout(() => this.loadDags(true), 1000);
       },
-      null,
-      2
-    );
-  }
-
-  statusBadgeClass(status: PipelineStatus): string {
-    return 'badge--' + status;
-  }
-
-  progress(pipeline: Pipeline): number {
-    return Math.round((pipeline.tasksCompleted / pipeline.tasks) * 100);
+      error: () => this.toastService.show('Failed to toggle pause', 'error')
+    });
   }
 
   initials(owner: string): string {
     return owner.slice(0, 2).toUpperCase();
   }
 
-  taskIcon(state: TaskState): string {
-    switch (state) {
-      case 'success': return '✓';
-      case 'running': return '●';
-      case 'failed': return '✗';
-      default: return '—';
+  dagStatusBadgeClass(dag: AirflowDag): string {
+    return dag.isPaused ? 'badge--paused' : 'badge--success';
+  }
+
+  lastRunBadgeClass(dagId: string): string {
+    return 'badge--' + this.getLastRunStatus(dagId);
+  }
+
+  relativeTime(dateStr: string | null): string {
+    if (!dateStr) {
+      return '—';
+    }
+    const diffMs = Date.now() - new Date(dateStr).getTime();
+    if (diffMs < 60000) {
+      return 'just now';
+    }
+    const minutes = Math.floor(diffMs / 60000);
+    if (minutes < 60) {
+      return `${minutes}m ago`;
+    }
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) {
+      return `${hours}h ago`;
+    }
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  }
+
+  airflowDagUrl(dagId: string): string {
+    return `${AIRFLOW_BASE_URL}/dags/${dagId}`;
+  }
+
+  // ─── Side panel ────────────────────────────────────────────
+
+  openDagDetail(dag: AirflowDag): void {
+    this.selectedDagPanel = dag;
+    if (!this.dagRuns.has(dag.dagId)) {
+      this.loadLastRun(dag.dagId);
     }
   }
 
-  openDetail(pipeline: Pipeline): void {
-    this.selectedPipeline = pipeline;
-    this.selectedPipelineTasks = this.buildTaskList(pipeline);
+  closeDagDetail(): void {
+    this.selectedDagPanel = null;
   }
 
-  closeDetail(): void {
-    this.selectedPipeline = null;
+  recentRuns(dagId: string): any[] {
+    return (this.dagRuns.get(dagId) ?? []).slice(0, 5);
   }
 
-  runPipeline(pipeline: Pipeline, event?: Event): void {
-    event?.stopPropagation();
+  runDuration(run: any): string {
+    return this.formatDuration(run?.startDate, run?.endDate) || '—';
   }
 
-  pausePipeline(pipeline: Pipeline, event?: Event): void {
-    event?.stopPropagation();
+  triggerFromPanel(dag: AirflowDag): void {
+    this.closeDagDetail();
+    this.openTriggerModal(dag.dagId);
   }
 
-  deletePipeline(pipeline: Pipeline, event?: Event): void {
-    event?.stopPropagation();
+  // ─── Trigger modal ─────────────────────────────────────────
+
+  get isMlopsDag(): boolean {
+    return this.selectedDagId === MLOPS_DAG_ID;
   }
 
-  openTriggerModal(): void {
+  get selectedDag(): AirflowDag | null {
+    return this.availableDags.find(d => d.dagId === this.selectedDagId) ?? null;
+  }
+
+  get dagRunConfigJson(): string {
+    if (this.isMlopsDag) {
+      return JSON.stringify(
+        {
+          dag_id: this.selectedDagId,
+          conf: {
+            RAW_DATA_FILE: this.selectedDatasetName,
+            MLFLOW_TRACKING_URI: 'http://mlflow:5000',
+            objective: 'f1_score'
+          }
+        },
+        null,
+        2
+      );
+    }
+
+    let conf: Record<string, any> = {};
+    if (this.additionalConfJson.trim()) {
+      try {
+        conf = JSON.parse(this.additionalConfJson);
+      } catch {
+        conf = { error: 'Invalid JSON' };
+      }
+    }
+    return JSON.stringify({ dag_id: this.selectedDagId, conf }, null, 2);
+  }
+
+  statusBadgeClass(status: PipelineRun['status']): string {
+    return 'badge--' + status;
+  }
+
+  openTriggerModal(dagId?: string): void {
     this.selectedDatasetName = this.triggerDatasets[0].name;
+    this.additionalConfJson = '';
     this.showTriggerModal = true;
+    this.loadAvailableDags(dagId);
   }
 
   closeTriggerModal(): void {
@@ -212,90 +362,293 @@ export class PipelinesComponent implements OnInit, OnDestroy {
     this.showTriggerModal = false;
   }
 
-  triggerDag(): void {
-    if (this.triggering) {
+  loadAvailableDags(preferredDagId?: string): void {
+    this.isLoadingDags = true;
+    this.pipelineApiService.getAllDags().subscribe({
+      next: (dags) => {
+        this.availableDags = dags.filter(d => d.isActive && !d.hasImportErrors);
+        this.isLoadingDags = false;
+        const preferred = this.availableDags.find(d => d.dagId === (preferredDagId ?? MLOPS_DAG_ID));
+        this.selectedDagId = (preferred ?? this.availableDags[0])?.dagId ?? null;
+        this.onDagSelected();
+      },
+      error: () => {
+        this.isLoadingDags = false;
+      }
+    });
+  }
+
+  onDagSelected(): void {
+    this.selectedDagRunsCount = null;
+    if (!this.selectedDagId) {
       return;
     }
-    this.triggering = true;
-    const timeout = setTimeout(() => {
-      this.triggering = false;
-      this.showTriggerModal = false;
-      this.launchDagRun();
-    }, 800);
-    this.cleanups.push(() => clearTimeout(timeout));
+    this.pipelineApiService.getDagRuns(this.selectedDagId).subscribe({
+      next: (runs) => (this.selectedDagRunsCount = runs.length),
+      error: () => (this.selectedDagRunsCount = null)
+    });
   }
 
-  private launchDagRun(): void {
-    const pipeline: Pipeline = {
-      id: `talys-mlops-pipeline-${Date.now()}`,
-      name: 'talys_mlops_pipeline',
-      status: 'running',
-      schedule: 'Manual',
-      lastRun: 'just now',
-      duration: '0m 00s',
-      tasks: this.dagTasks.length,
-      tasksCompleted: 0,
-      owner: CURRENT_USER,
-      tags: ['mlops', 'dag'],
-      isDagRun: true
+  triggerDag(): void {
+    if (this.triggering || !this.selectedDagId) {
+      return;
+    }
+
+    let conf: Record<string, any> | undefined;
+    if (!this.isMlopsDag && this.additionalConfJson.trim()) {
+      try {
+        conf = JSON.parse(this.additionalConfJson);
+      } catch {
+        this.toastService.show('Additional config must be valid JSON', 'error');
+        return;
+      }
+    }
+
+    this.triggering = true;
+
+    const request: TriggerPipelineRequest = {
+      dagId: this.selectedDagId,
+      ...(this.isMlopsDag ? { dataset: this.selectedDatasetName, objective: 'f1_score' } : {}),
+      ...(conf ? { conf } : {})
     };
 
-    this.pipelines = [pipeline, ...this.pipelines];
-    this.toastService.show('DAG triggered — talys_mlops_pipeline is running', 'success');
-    this.runDagSimulation(pipeline);
-  }
-
-  private runDagSimulation(pipeline: Pipeline): void {
-    const interval = setInterval(() => {
-      pipeline.tasksCompleted++;
-      if (this.selectedPipeline?.id === pipeline.id) {
-        this.selectedPipelineTasks = this.buildTaskList(pipeline);
+    this.pipelineApiService.triggerPipeline(request).subscribe({
+      next: (run) => {
+        this.triggering = false;
+        this.showTriggerModal = false;
+        this.activeRun = run;
+        this.toastService.show(`DAG triggered — ${run.dagRunId}`, 'success');
+        this.startPolling(run.id);
+      },
+      error: (err) => {
+        this.triggering = false;
+        this.toastService.show('Failed to trigger DAG', 'error');
+        console.error(err);
       }
-      if (pipeline.tasksCompleted >= pipeline.tasks) {
-        clearInterval(interval);
-        pipeline.status = 'success';
-        pipeline.duration = `0m ${pipeline.tasks * (DAG_STEP_INTERVAL_MS / 1000)}s`;
-        if (this.selectedPipeline?.id === pipeline.id) {
-          this.selectedPipelineTasks = this.buildTaskList(pipeline);
-        }
-        this.toastService.show('Pipeline completed — results available in Models page', 'success');
-      }
-    }, DAG_STEP_INTERVAL_MS);
-    this.cleanups.push(() => clearInterval(interval));
-  }
-
-  private buildTaskList(pipeline: Pipeline): PipelineTask[] {
-    if (pipeline.isDagRun) {
-      return this.dagTasks.map((task, index) => {
-        let state: TaskState;
-        if (index < pipeline.tasksCompleted) {
-          state = 'success';
-        } else if (pipeline.status === 'running' && index === pipeline.tasksCompleted) {
-          state = 'running';
-        } else {
-          state = 'pending';
-        }
-        return { name: task.id, state };
-      });
-    }
-
-    const names = TASK_NAME_POOL.slice(0, pipeline.tasks);
-    while (names.length < pipeline.tasks) {
-      names.push(`task_${names.length + 1}`);
-    }
-
-    return names.map((name, index) => {
-      let state: TaskState;
-      if (index < pipeline.tasksCompleted) {
-        state = 'success';
-      } else if (pipeline.status === 'failed' && index === pipeline.tasksCompleted) {
-        state = 'failed';
-      } else if (pipeline.status === 'running' && index === pipeline.tasksCompleted) {
-        state = 'running';
-      } else {
-        state = 'pending';
-      }
-      return { name, state };
     });
+  }
+
+  private startPolling(runId: string): void {
+    this.pollingSubscription?.unsubscribe();
+    this.pollingSubscription = this.pipelineApiService.pollRunStatus(runId).subscribe({
+      next: (run) => {
+        this.activeRun = run;
+      },
+      complete: () => {
+        if (this.activeRun?.status === 'success') {
+          this.toastService.show('Pipeline completed successfully!', 'success');
+        } else if (this.activeRun?.status === 'failed') {
+          this.toastService.show('Pipeline failed', 'error');
+        }
+      }
+    });
+  }
+
+  get activeRunProgress(): number {
+    if (!this.activeRun || this.activeRun.totalTasks === 0) {
+      return 0;
+    }
+    return Math.round((this.activeRun.completedTasks / this.activeRun.totalTasks) * 100);
+  }
+
+  get displayTasks(): Array<{ taskId: string; label: string }> {
+    // If we have real task statuses from the API, use them
+    if ((this.activeRun?.taskStatuses?.length ?? 0) > 0) {
+      const statuses = this.activeRun!.taskStatuses;
+
+      // Sort by TASK_ORDER for the known MLOps DAG
+      if (this.activeRun?.dagId === MLOPS_DAG_ID) {
+        return this.TASK_ORDER
+          .map(taskId => ({
+            taskId,
+            label: this.TASK_LABELS[taskId]
+          }))
+          .filter(task => statuses.some(s => s.taskId === task.taskId));
+      }
+
+      // For other DAGs, sort by TASK_ORDER where recognized, otherwise keep API order
+      return statuses
+        .slice()
+        .sort((a, b) => {
+          const aIdx = this.TASK_ORDER.indexOf(a.taskId);
+          const bIdx = this.TASK_ORDER.indexOf(b.taskId);
+          if (aIdx !== -1 && bIdx !== -1) {
+            return aIdx - bIdx;
+          }
+          return 0;
+        })
+        .map(t => ({
+          taskId: t.taskId,
+          label: this.TASK_LABELS[t.taskId] || this.humanizeTaskId(t.taskId)
+        }));
+    }
+    // Fallback: only use the hardcoded list for the MLOps DAG, before the first poll
+    if (this.activeRun?.dagId === MLOPS_DAG_ID) {
+      return this.TASK_ORDER.map(taskId => ({
+        taskId,
+        label: this.TASK_LABELS[taskId]
+      }));
+    }
+    // For other DAGs with no task data yet, show empty
+    return [];
+  }
+
+  private humanizeTaskId(taskId: string): string {
+    return taskId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  getTaskStatus(taskId: string): TaskStatus | null {
+    if (!this.activeRun?.taskStatuses) {
+      return null;
+    }
+    return this.activeRun.taskStatuses.find(t => t.taskId === taskId) || null;
+  }
+
+  getTaskState(taskId: string): string {
+    return this.getTaskStatus(taskId)?.state || 'none';
+  }
+
+  getTaskIcon(state: string): string {
+    switch (state) {
+      case 'success': return '✓';
+      case 'running': return '↻';
+      case 'failed': return '✗';
+      case 'upstream_failed': return '⚠';
+      default: return '—';
+    }
+  }
+
+  getTaskStateClass(state: string): string {
+    switch (state) {
+      case 'success': return 'success';
+      case 'running': return 'running';
+      case 'failed': return 'failed';
+      case 'upstream_failed': return 'warning';
+      default: return 'muted';
+    }
+  }
+
+  getTaskDuration(taskId: string): string {
+    const task = this.getTaskStatus(taskId);
+    if (!task?.startDate || !task?.endDate) {
+      return '';
+    }
+    const start = new Date(task.startDate).getTime();
+    const end = new Date(task.endDate).getTime();
+    const diffMs = end - start;
+    const mins = Math.floor(diffMs / 60000);
+    const secs = Math.floor((diffMs % 60000) / 1000);
+    return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+  }
+
+  getFailedTask(): string | null {
+    if (!this.activeRun?.taskStatuses) {
+      return null;
+    }
+    const failed = this.activeRun.taskStatuses.find(t => t.state === 'failed');
+    return failed ? (this.TASK_LABELS[failed.taskId] || failed.taskId) : null;
+  }
+
+  dismissActiveRun(): void {
+    this.pollingSubscription?.unsubscribe();
+    this.pollingSubscription = null;
+    this.activeRun = null;
+  }
+
+  // ─── Task logs ─────────────────────────────────────────────
+
+  openTaskLogs(taskId: string): void {
+    const task = this.getTaskStatus(taskId);
+    if (!task || task.state === 'none' || !this.activeRun) {
+      return;
+    }
+
+    this.selectedTaskForLogs = taskId;
+    this.showLogsModal = true;
+    this.taskLogs = '';
+    this.logsError = null;
+    this.isLoadingLogs = true;
+
+    this.pipelineApiService.getTaskLogs(this.activeRun.id, taskId, task.tryNumber || 1).subscribe({
+      next: (response) => {
+        this.taskLogs = response.logs;
+        this.isLoadingLogs = false;
+      },
+      error: () => {
+        this.logsError = 'Failed to load logs';
+        this.isLoadingLogs = false;
+      }
+    });
+  }
+
+  closeLogsModal(): void {
+    this.showLogsModal = false;
+    this.selectedTaskForLogs = null;
+    this.taskLogs = '';
+  }
+
+  copyLogs(): void {
+    navigator.clipboard.writeText(this.taskLogs).then(
+      () => this.toastService.show('Logs copied', 'success'),
+      () => this.toastService.show('Failed to copy logs', 'error')
+    );
+  }
+
+  // ─── Run-level pause / mark-as-failed ──────────────────────
+
+  toggleRunPause(): void {
+    if (!this.activeRun) {
+      return;
+    }
+    const isPaused = !this.isRunDagPaused();
+    this.pipelineApiService.pauseDagRun(this.activeRun.id, isPaused).subscribe({
+      next: () => {
+        const dag = this.dags.find(d => d.dagId === this.activeRun?.dagId);
+        if (dag) {
+          dag.isPaused = isPaused;
+        }
+        this.toastService.show(isPaused ? 'DAG paused' : 'DAG unpaused', 'success');
+      },
+      error: () => this.toastService.show('Failed to toggle pause', 'error')
+    });
+  }
+
+  isRunDagPaused(): boolean {
+    if (!this.activeRun) {
+      return false;
+    }
+    const dag = this.dags.find(d => d.dagId === this.activeRun?.dagId);
+    return dag?.isPaused ?? false;
+  }
+
+  markRunAsFailed(): void {
+    if (!this.activeRun) {
+      return;
+    }
+    if (!confirm('Mark this pipeline run as failed?')) {
+      return;
+    }
+    this.pipelineApiService.markAsFailed(this.activeRun.id).subscribe({
+      next: () => {
+        if (this.activeRun) {
+          this.activeRun.status = 'failed';
+        }
+        this.toastService.show('Pipeline marked as failed', 'success');
+        this.pollingSubscription?.unsubscribe();
+      },
+      error: () => this.toastService.show('Failed to mark as failed', 'error')
+    });
+  }
+
+  private formatDuration(startDate?: string | null, endDate?: string | null): string {
+    if (!startDate) {
+      return '';
+    }
+    const start = new Date(startDate).getTime();
+    const end = endDate ? new Date(endDate).getTime() : Date.now();
+    const totalSeconds = Math.max(0, Math.round((end - start) / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
   }
 }

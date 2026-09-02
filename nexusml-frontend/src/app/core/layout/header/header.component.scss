@@ -61,12 +61,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
-    background: #0e7490;
+    background: var(--accent-hover);
     color: var(--text-inverse);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
   }
 
@@ -104,9 +104,9 @@
 }
 
 .role-badge {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 10px;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
   font-weight: 600;
   margin-right: 8px;
 }
@@ -127,28 +127,24 @@
 }
 
 .theme-toggle {
-  position: relative;
-  width: 36px;
-  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg-secondary);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
   cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease;
+  transition: color 0.15s ease;
 
-  &__thumb {
-    position: absolute;
-    top: 1px;
-    left: 1px;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: var(--accent);
-    transition: transform 0.2s ease, background-color 0.2s ease;
+  &__icon {
+    font-size: 16px;
+    color: var(--text-secondary);
   }
 
-  &--dark &__thumb {
-    transform: translateX(16px);
+  &:hover &__icon {
+    color: var(--text-primary);
   }
 }

@@ -4,7 +4,7 @@
       <h1 class="datasets__title">Datasets</h1>
       <p class="datasets__subtitle">Manage, version, and validate your training data</p>
     </div>
-    <app-button variant="primary" (clicked)="openUploadModal()">+ Upload Dataset</app-button>
+    <app-button variant="primary" (clicked)="openUploadModal()">Upload Dataset</app-button>
   </div>
 
   <div class="datasets__stats">
@@ -71,7 +71,7 @@
       <div class="dataset-card__top">
         <div class="dataset-card__badges">
           <span class="format-badge" [ngClass]="formatBadgeClass(dataset.format)">{{ dataset.format }}</span>
-          <span class="dvc-badge" *ngIf="dataset.dvcTracked">DVC ✓</span>
+          <span class="dvc-badge" *ngIf="dataset.dvcTracked">DVC</span>
         </div>
         <span class="badge" [ngClass]="statusBadgeClass(dataset.status)">
           <span class="badge__dot" *ngIf="isTransient(dataset)"></span>
@@ -92,7 +92,7 @@
 
       <div class="quality-block" *ngIf="!isTransient(dataset); else transientBlock">
         <div class="quality-block__row">
-          <span class="quality-block__label">Quality Score</span>
+          <span class="quality-block__label">Quality</span>
           <span class="quality-block__score" [ngClass]="'quality-block__score--' + qualityColor(dataset.qualityScore)">
             {{ dataset.qualityScore }}%
           </span>

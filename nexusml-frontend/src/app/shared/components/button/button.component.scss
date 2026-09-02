@@ -7,14 +7,16 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 10px 18px;
+  height: 36px;
+  padding: 0 16px;
   border: 1px solid transparent;
-  border-radius: var(--radius);
-  font-size: 14px;
+  border-radius: 6px;
+  font-size: 13px;
   font-weight: 500;
   font-family: inherit;
+  letter-spacing: 0;
   cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
 
   &:disabled {
     cursor: not-allowed;
@@ -36,7 +38,7 @@
 
   &--secondary {
     background: transparent;
-    color: var(--text-primary);
+    color: var(--text-secondary);
     border-color: var(--border);
 
     &:hover:not(:disabled) {

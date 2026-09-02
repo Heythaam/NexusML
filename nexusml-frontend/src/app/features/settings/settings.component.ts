@@ -3,6 +3,7 @@ import { Component, OnInit } from '@angular/core';
 import { AuthService } from '../../core/auth/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { CredentialService } from '../../core/services/credential.service';
+import { PipelineApiService } from '../../core/services/pipeline-api.service';
 import { Credential, CreateCredentialRequest, CredentialType } from '../../core/models/credential.model';
 
 type IntegrationStatus = 'connected' | 'disconnected' | 'error' | 'untested';
@@ -45,14 +46,14 @@ const TEST_DURATION_MS = 1500;
 const SAVE_DURATION_MS = 800;
 
 const CATEGORY_META: { category: string; label: string; icon: string }[] = [
-  { category: 'SOURCE_CONTROL', label: 'Source Control', icon: '🐙' },
-  { category: 'CONTAINER_REGISTRY', label: 'Container Registry', icon: '🐳' },
-  { category: 'CLOUD_PROVIDER', label: 'Cloud Provider', icon: '☁️' },
-  { category: 'ML_PLATFORM', label: 'ML Platform', icon: '🧪' },
-  { category: 'NOTIFICATION', label: 'Notification', icon: '💬' },
-  { category: 'DATA_STORAGE', label: 'Data Storage', icon: '🪣' },
-  { category: 'CI_CD', label: 'CI/CD', icon: '⚙️' },
-  { category: 'OTHER', label: 'Other', icon: '🔧' }
+  { category: 'SOURCE_CONTROL', label: 'Source Control', icon: 'SC' },
+  { category: 'CONTAINER_REGISTRY', label: 'Container Registry', icon: 'CR' },
+  { category: 'CLOUD_PROVIDER', label: 'Cloud Provider', icon: 'CP' },
+  { category: 'ML_PLATFORM', label: 'ML Platform', icon: 'ML' },
+  { category: 'NOTIFICATION', label: 'Notification', icon: 'NT' },
+  { category: 'DATA_STORAGE', label: 'Data Storage', icon: 'DS' },
+  { category: 'CI_CD', label: 'CI/CD', icon: 'CI' },
+  { category: 'OTHER', label: 'Other', icon: 'OT' }
 ];
 
 @Component({
@@ -64,12 +65,12 @@ export class SettingsComponent implements OnInit {
   saving = false;
 
   integrations: IntegrationConfig[] = [
-    { id: 'airflow', name: 'Apache Airflow', description: 'Pipeline orchestration', url: 'http://localhost', port: 8080, status: 'connected', lastTested: '2 min ago', icon: '✈', dirty: false, testing: false },
-    { id: 'mlflow', name: 'MLflow', description: 'Experiment tracking', url: 'http://localhost', port: 5000, status: 'connected', lastTested: '5 min ago', icon: '🧪', dirty: false, testing: false },
-    { id: 'prometheus', name: 'Prometheus', description: 'Metrics collection', url: 'http://localhost', port: 9090, status: 'error', lastTested: '10 min ago', icon: '📊', dirty: false, testing: false },
-    { id: 'grafana', name: 'Grafana', description: 'Metrics visualization', url: 'http://localhost', port: 3000, status: 'disconnected', lastTested: null, icon: '📈', dirty: false, testing: false },
-    { id: 'kubernetes', name: 'Kubernetes API', description: 'Container orchestration', url: 'https://localhost', port: 6443, status: 'connected', lastTested: '1 min ago', icon: '☸', dirty: false, testing: false },
-    { id: 'slack', name: 'Slack Webhook', description: 'Notifications', url: 'https://hooks.slack.com', port: null, status: 'untested', lastTested: null, icon: '💬', dirty: false, testing: false }
+    { id: 'airflow', name: 'Apache Airflow', description: 'Pipeline orchestration', url: 'http://localhost', port: 8080, status: 'connected', lastTested: '2 min ago', icon: 'AF', dirty: false, testing: false },
+    { id: 'mlflow', name: 'MLflow', description: 'Experiment tracking', url: 'http://localhost', port: 5000, status: 'connected', lastTested: '5 min ago', icon: 'ML', dirty: false, testing: false },
+    { id: 'prometheus', name: 'Prometheus', description: 'Metrics collection', url: 'http://localhost', port: 9090, status: 'error', lastTested: '10 min ago', icon: 'PR', dirty: false, testing: false },
+    { id: 'grafana', name: 'Grafana', description: 'Metrics visualization', url: 'http://localhost', port: 3000, status: 'disconnected', lastTested: null, icon: 'GR', dirty: false, testing: false },
+    { id: 'kubernetes', name: 'Kubernetes API', description: 'Container orchestration', url: 'https://localhost', port: 6443, status: 'connected', lastTested: '1 min ago', icon: 'K8', dirty: false, testing: false },
+    { id: 'slack', name: 'Slack Webhook', description: 'Notifications', url: 'https://hooks.slack.com', port: null, status: 'untested', lastTested: null, icon: 'SL', dirty: false, testing: false }
   ];
 
   roles: Role[] = [
@@ -151,6 +152,7 @@ export class SettingsComponent implements OnInit {
   constructor(
     private readonly toastService: ToastService,
     private readonly credentialService: CredentialService,
+    private readonly pipelineApiService: PipelineApiService,
     public readonly authService: AuthService
   ) {}
 
@@ -176,6 +178,27 @@ export class SettingsComponent implements OnInit {
     }
 
     integration.testing = true;
+
+    if (integration.id === 'airflow') {
+      this.pipelineApiService.testConnection().subscribe({
+        next: (result) => {
+          integration.testing = false;
+          integration.status = result.connected ? 'connected' : 'error';
+          integration.lastTested = 'just now';
+          this.toastService.show(
+            result.connected ? `✓ Connected — ${result.dagCount} DAGs found` : '✗ Connection failed',
+            result.connected ? 'success' : 'error'
+          );
+        },
+        error: () => {
+          integration.testing = false;
+          integration.status = 'error';
+          integration.lastTested = 'just now';
+          this.toastService.show('✗ Connection failed', 'error');
+        }
+      });
+      return;
+    }
 
     setTimeout(() => {
       integration.testing = false;
@@ -257,6 +280,13 @@ export class SettingsComponent implements OnInit {
     this.formType = credential.type;
     this.formValue = '';
     this.showAddCredential = true;
+  }
+
+  getCredentialOwner(createdBy: string): string {
+    // If it looks like a UUID, show "Admin"
+    // Real fix: store username not UUID
+    const uuidRegex = /^[0-9a-f-]{36}$/i;
+    return uuidRegex.test(createdBy) ? 'Admin' : createdBy;
   }
 
   credentialIcon(credential: Credential): string {

@@ -15,14 +15,16 @@
 
   &__title {
     margin: 0 0 4px;
-    font-size: 24px;
+    font-size: 22px;
     font-weight: 600;
+    letter-spacing: -0.3px;
     color: var(--text-primary);
   }
 
   &__subtitle {
-    margin: 0;
-    font-size: 14px;
+    margin: 2px 0 0;
+    font-size: 13px;
+    font-weight: 400;
     color: var(--text-secondary);
   }
 
@@ -117,8 +119,8 @@
     display: block;
     font-size: 12px;
     font-weight: 500;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
+    letter-spacing: 0;
+    text-transform: none;
     color: var(--text-secondary);
     margin-bottom: 10px;
   }
@@ -194,7 +196,7 @@
   margin-bottom: 20px;
   border-radius: var(--radius);
   background: var(--warning-tint);
-  border: 1px solid var(--warning);
+  border-left: 3px solid var(--warning);
 
   &__text {
     font-size: 13px;
@@ -267,7 +269,7 @@
     }
 
     &--production {
-      border-left: 3px solid var(--success);
+      border-left: 2px solid var(--success);
     }
 
     &--archived {
@@ -300,7 +302,7 @@
   }
 
   &__metric-value {
-    font-weight: 700;
+    font-weight: 600;
     color: var(--accent);
   }
 
@@ -349,10 +351,10 @@
 .framework-badge {
   display: inline-flex;
   align-items: center;
-  padding: 3px 9px;
-  border-radius: 999px;
+  padding: 3px 8px;
+  border-radius: 4px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
 
   &--pytorch {
     background: var(--accent-tint);
@@ -378,9 +380,9 @@
 .stage-badge {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
   font-weight: 500;
 
   &--production {
@@ -419,7 +421,7 @@
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: 3px;
   background: var(--accent-tint);
   color: var(--accent);
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
@@ -609,9 +611,9 @@
 .badge {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
   font-weight: 500;
   text-transform: capitalize;
   white-space: nowrap;
