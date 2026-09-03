@@ -2,7 +2,7 @@
   <div class="models__header">
     <div>
       <h1 class="models__title">Models</h1>
-      <p class="models__subtitle">Track experiments and manage model lifecycle</p>
+      <p class="models__subtitle">Model registry and experiments, backed by MLflow</p>
     </div>
     <div class="tab-pills">
       <button type="button" class="tab-pills__item" [class.tab-pills__item--active]="activeTab === 'registry'" (click)="setTab('registry')">Models Registry</button>
@@ -28,20 +28,20 @@
       <p class="stat-card__value">{{ experimentsCount }}</p>
     </app-card>
     <app-card class="stat-card">
-      <span class="stat-card__label">Last Pipeline Run</span>
-      <p class="stat-card__value stat-card__value--link">
-        <a routerLink="/pipelines" class="stat-card__link">{{ lastPipelineRunLabel }} →</a>
-      </p>
+      <span class="stat-card__label">Total Runs</span>
+      <p class="stat-card__value">{{ totalRuns }}</p>
     </app-card>
   </div>
 
+  <p class="pipeline-source-banner__text" *ngIf="error" style="margin-bottom: 20px; color: var(--danger);">{{ error }}</p>
+
   <!-- ===================== REGISTRY TAB ===================== -->
   <ng-container *ngIf="activeTab === 'registry'">
-    <div class="pending-banner" *ngIf="pendingModels.length">
+    <div class="pending-banner" *ngIf="pendingApprovalCount > 0 && isAdmin">
       <span class="pending-banner__text">
-        {{ pendingModels.length }} model promotion request{{ pendingModels.length > 1 ? 's' : '' }} pending review
+        {{ pendingApprovalCount }} model promotion request{{ pendingApprovalCount > 1 ? 's' : '' }} pending your review
       </span>
-      <button type="button" class="pending-banner__action" (click)="reviewNow(pendingModels[0])">Review Now</button>
+      <button type="button" class="pending-banner__action" (click)="openReviewPanel()">Review Now</button>
     </div>
 
     <app-card class="models-table-card">
@@ -55,18 +55,10 @@
 
         <select class="models__select" [(ngModel)]="stageFilter">
           <option value="all">All Stages</option>
-          <option value="Development">Development</option>
+          <option value="None">None</option>
           <option value="Staging">Staging</option>
           <option value="Production">Production</option>
           <option value="Archived">Archived</option>
-        </select>
-
-        <select class="models__select" [(ngModel)]="frameworkFilter">
-          <option value="all">All Frameworks</option>
-          <option value="PyTorch">PyTorch</option>
-          <option value="scikit-learn">scikit-learn</option>
-          <option value="TensorFlow">TensorFlow</option>
-          <option value="XGBoost">XGBoost</option>
         </select>
 
         <span class="models__count">Showing {{ filteredModels.length }} of {{ totalModels }} models</span>
@@ -77,12 +69,10 @@
           <thead>
             <tr>
               <th>Model Name</th>
-              <th>Framework</th>
-              <th>Stage</th>
               <th>Version</th>
-              <th>Primary Metric</th>
-              <th>Dataset</th>
-              <th>Owner</th>
+              <th>Stage</th>
+              <th>Run ID</th>
+              <th>Status</th>
               <th>Last Updated</th>
               <th>Actions</th>
             </tr>
@@ -91,55 +81,48 @@
             <tr
               class="models-table__row"
               *ngFor="let model of filteredModels"
-              [id]="'model-row-' + model.id"
-              [class.models-table__row--production]="model.stage === 'Production'"
-              [class.models-table__row--archived]="model.stage === 'Archived'"
-              [class.models-table__row--highlighted]="highlightedModelId === model.id"
+              [class.models-table__row--production]="latestVersion(model)?.currentStage === 'Production'"
+              [class.models-table__row--archived]="latestVersion(model)?.currentStage === 'Archived'"
               (click)="openDetail(model)"
             >
               <td>
                 <div class="models-table__name-cell">
-                  <span class="status-dot status-dot--warning" *ngIf="model.promotionRequest?.status === 'pending'" title="Promotion pending review"></span>
-                  <span class="status-dot status-dot--accent" *ngIf="hasRunningExperiment(model)" title="Experiment running"></span>
+                  
                   <div>
                     <div class="models-table__name">{{ model.name }}</div>
-                    <div class="models-table__description">{{ model.description }}</div>
+                    <div class="models-table__description">{{ model.description || '—' }}</div>
                   </div>
                 </div>
               </td>
               <td>
-                <span class="framework-badge" [ngClass]="frameworkBadgeClass(model.framework)">{{ model.framework }}</span>
+                <span class="version-pill" *ngIf="latestVersion(model) as v">v{{ v.version }}</span>
+                <ng-container *ngIf="!latestVersion(model)">—</ng-container>
               </td>
               <td>
-                <span class="stage-badge" [ngClass]="stageBadgeClass(model.stage)">{{ model.stage }}</span>
+                <span class="stage-badge" [ngClass]="stageBadgeClass(latestVersion(model)?.currentStage)">
+                  {{ latestVersion(model)?.currentStage || 'None' }}
+                </span>
+              </td>
+              <td class="models-table__dataset">
+                <span *ngIf="latestVersion(model) as v">{{ v.runId }}</span>
+                <ng-container *ngIf="!latestVersion(model)">—</ng-container>
               </td>
               <td>
-                <span class="version-pill">{{ model.version }}</span>
+                <span class="badge" *ngIf="latestVersion(model) as v" [ngClass]="statusBadgeClass(v.status)">{{ v.status }}</span>
+                <ng-container *ngIf="!latestVersion(model)">—</ng-container>
               </td>
-              <td>
-                <ng-container *ngIf="primaryMetricEntry(model) as pm; else noMetric">
-                  <span class="models-table__metric-value">{{ formatMetricValue(pm.label, pm.value) }}</span>
-                  <span class="models-table__metric-label">{{ pm.label }}</span>
-                </ng-container>
-                <ng-template #noMetric>—</ng-template>
-              </td>
-              <td class="models-table__dataset">{{ model.dataset }}</td>
-              <td>
-                <div class="models-table__owner">
-                  <div class="avatar" [title]="model.owner">{{ initials(model.owner) }}</div>
-                  <span>{{ model.owner }}</span>
-                </div>
-              </td>
-              <td>{{ model.lastUpdated }}</td>
+              <td>{{ model.lastUpdatedTimestamp ? (model.lastUpdatedTimestamp | date:'medium') : '—' }}</td>
               <td>
                 <div class="row-actions">
-                  <button type="button" class="icon-btn" title="View" (click)="openDetail(model); $event.stopPropagation()">↗</button>
-                  <button type="button" class="icon-btn" title="Archive" (click)="archiveModel(model, $event)">🗑</button>
+                  <button type="button" class="icon-btn" title="View Versions" (click)="openDetail(model); $event.stopPropagation()">↗</button>
                 </div>
               </td>
             </tr>
-            <tr *ngIf="filteredModels.length === 0">
-              <td class="models-table__empty" colspan="9">No models match your filters.</td>
+            <tr *ngIf="filteredModels.length === 0 && !isLoading">
+              <td class="models-table__empty" colspan="7">No models match your filters.</td>
+            </tr>
+            <tr *ngIf="isLoading">
+              <td class="models-table__empty" colspan="7">Loading models from MLflow…</td>
             </tr>
           </tbody>
         </table>
@@ -151,15 +134,14 @@
   <ng-container *ngIf="activeTab === 'experiments'">
     <div class="pipeline-source-banner">
       <span class="pipeline-source-banner__text">
-        📊 Experiments are populated by the <code>train_model</code> DAG task. Each pipeline run logs all candidate models to MLflow and selects the best by F1 score.
+        Runs are pulled live from MLflow experiment tracking.
       </span>
-      <a class="pipeline-source-banner__link" routerLink="/pipelines" [queryParams]="{ trigger: 'true' }">Run Pipeline →</a>
+      <a class="pipeline-source-banner__link" [href]="mlflowUrl" target="_blank" rel="noopener">Open MLflow →</a>
     </div>
 
     <app-card class="experiments-card">
       <div class="experiments-card__header">
         <h3 class="experiments-card__title">Experiment Runs</h3>
-        <app-button variant="primary" [disabled]="!canCompare" (clicked)="openComparison()">Compare Selected</app-button>
       </div>
 
       <div class="experiments-table-wrap">
@@ -167,116 +149,91 @@
           <thead>
             <tr>
               <th></th>
-              <th></th>
+              <th>Run Name</th>
               <th>Run ID</th>
-              <th>Experiment Name</th>
-              <th>DAG Run</th>
-              <th>Pipeline</th>
+              <th>Experiment ID</th>
               <th>Status</th>
+              <th>Start Time</th>
               <th>Duration</th>
-              <th>Accuracy</th>
-              <th>F1 Score</th>
-              <th>AUC/RMSE</th>
-              <th>Parameters</th>
-              <th>Owner</th>
-              <th>Date</th>
+              <th>Metrics</th>
+              <th>Params</th>
+              <th>User</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            <ng-container *ngFor="let exp of experiments">
+            <ng-container *ngFor="let run of paginatedRuns">
               <tr
                 class="experiments-table__row"
-                [class.experiments-table__row--failed]="exp.status === 'failed'"
-                [class.experiments-table__row--running]="exp.status === 'running'"
+                [class.experiments-table__row--failed]="run.info.status === 'FAILED'"
+                [class.experiments-table__row--running]="run.info.status === 'RUNNING'"
               >
                 <td>
-                  <button type="button" class="expand-btn" [class.expand-btn--open]="expandedExperimentId === exp.id" (click)="toggleExpand(exp)" aria-label="Expand parameters">▶</button>
+                  <button type="button" class="expand-btn" [class.expand-btn--open]="expandedRunId === run.info.runId" (click)="toggleExpand(run)" aria-label="Expand run">▶</button>
                 </td>
+                <td>{{ getRunName(run) }}</td>
+                <td class="experiments-table__run-id" [title]="run.info.runId">{{ run.info.runId | slice:0:8 }}...</td>
+                <td class="experiments-table__dag-run">{{ run.info.experimentId }}</td>
                 <td>
-                  <input type="checkbox" [checked]="isSelected(exp)" (click)="toggleExperimentSelection(exp, $event)" />
-                </td>
-                <td class="experiments-table__run-id">{{ exp.runId }}</td>
-                <td>
-                  {{ exp.name }}
-                  <div class="experiments-table__badges">
-                    <span class="best-run-badge" *ngIf="exp.isBestRun">👑 Best</span>
-                    <span class="objective-badge" *ngIf="exp.tuned">Tuned</span>
-                  </div>
-                </td>
-                <td class="experiments-table__dag-run">{{ exp.dagRunId }}</td>
-                <td class="experiments-table__pipeline">talys_mlops_pipeline</td>
-                <td>
-                  <span class="badge" [ngClass]="'badge--' + exp.status">
-                    <span class="badge__dot" *ngIf="exp.status === 'running'"></span>
-                    {{ exp.status }}
+                  <span class="badge" [ngClass]="statusBadgeClass(run.info.status)">
+                    <span class="badge__dot" *ngIf="run.info.status === 'RUNNING'"></span>
+                    {{ run.info.status }}
                   </span>
                 </td>
-                <td>{{ exp.duration }}</td>
-                <td [class.metric-shimmer]="exp.status === 'running'">{{ exp.metrics.accuracy !== undefined ? (exp.metrics.accuracy * 100).toFixed(1) + '%' : '—' }}</td>
-                <td [class.metric-shimmer]="exp.status === 'running'">{{ exp.metrics.f1Score !== undefined ? (exp.metrics.f1Score * 100).toFixed(1) + '%' : '—' }}</td>
-                <td>{{ exp.metrics.auc !== undefined ? (exp.metrics.auc * 100).toFixed(1) + '%' : (exp.metrics.rmse !== undefined ? exp.metrics.rmse.toFixed(3) : '—') }}</td>
-                <td class="experiments-table__params" [title]="paramsPreview(exp)">{{ paramsPreview(exp) }}</td>
-                <td>
-                  <div class="avatar" [title]="exp.owner">{{ initials(exp.owner) }}</div>
+                <td>{{ formatTimestamp(run.info.startTime) }}</td>
+                <td>{{ getDuration(run.info.startTime, run.info.endTime) }}</td>
+                <td class="experiments-table__params">
+                  <div class="param-pills">
+                    <span class="param-pill" *ngFor="let metric of topMetrics(run)">
+                      <span class="param-pill__key">{{ metric.key }}</span>:<span class="param-pill__value">{{ metric.value }}</span>
+                    </span>
+                    <span *ngIf="!topMetrics(run).length">—</span>
+                  </div>
                 </td>
-                <td>{{ exp.createdAt }}</td>
+                <td class="experiments-table__params">
+                  <div class="param-pills">
+                    <span class="param-pill" *ngFor="let param of topParams(run)">
+                      <span class="param-pill__key">{{ param.key }}</span>:<span class="param-pill__value">{{ param.value }}</span>
+                    </span>
+                    <span *ngIf="!topParams(run).length">—</span>
+                  </div>
+                </td>
+                <td>{{ run.info.userId || '—' }}</td>
                 <td>
                   <div class="row-actions">
-                    <button type="button" class="icon-btn" title="View" (click)="viewExperiment(exp, $event)">👁</button>
-                    <button type="button" class="icon-btn" title="Archive" (click)="archiveExperiment(exp, $event)">🗃</button>
+                    <a class="mock-link" [href]="mlflowUrl" target="_blank" rel="noopener">View in MLflow →</a>
                   </div>
                 </td>
               </tr>
-              <tr class="experiments-table__expanded" *ngIf="expandedExperimentId === exp.id">
-                <td [attr.colspan]="15">
+              <tr class="experiments-table__expanded" *ngIf="expandedRunId === run.info.runId">
+                <td [attr.colspan]="11">
                   <div class="experiment-expand">
                     <div class="experiment-expand__section">
-                      <h4 class="experiment-expand__title">Model Parameters</h4>
+                      <h4 class="experiment-expand__title">All Metrics</h4>
                       <div class="param-pills">
-                        <span class="param-pill" *ngFor="let param of paramEntries(exp)">
+                        <span class="param-pill" *ngFor="let metric of run.data.metrics">
+                          <span class="param-pill__key">{{ metric.key }}</span>:<span class="param-pill__value">{{ metric.value }}</span>
+                        </span>
+                        <span *ngIf="!run.data.metrics.length">No metrics logged.</span>
+                      </div>
+                    </div>
+
+                    <div class="experiment-expand__section">
+                      <h4 class="experiment-expand__title">All Params</h4>
+                      <div class="param-pills">
+                        <span class="param-pill" *ngFor="let param of run.data.params">
                           <span class="param-pill__key">{{ param.key }}</span>:<span class="param-pill__value">{{ param.value }}</span>
                         </span>
+                        <span *ngIf="!run.data.params.length">No params logged.</span>
                       </div>
                     </div>
 
                     <div class="experiment-expand__section">
-                      <h4 class="experiment-expand__title">MLflow Params</h4>
-                      <div class="param-pills">
-                        <span class="param-pill">
-                          <span class="param-pill__key">RAW_DATA_FILE</span>:<span class="param-pill__value">{{ mlflowRawDataFile(exp) }}</span>
-                        </span>
-                        <span class="param-pill">
-                          <span class="param-pill__key">MLFLOW_TRACKING_URI</span>:<span class="param-pill__value">http://mlflow:5000</span>
-                        </span>
-                        <ng-container *ngIf="exp.tuned">
-                          <span class="param-pill">
-                            <span class="param-pill__key">optimizer</span>:<span class="param-pill__value">optuna</span>
-                          </span>
-                          <span class="param-pill">
-                            <span class="param-pill__key">n_trials</span>:<span class="param-pill__value">20</span>
-                          </span>
-                        </ng-container>
-                        <span class="param-pill">
-                          <span class="param-pill__key">objective</span>:<span class="param-pill__value">f1_score</span>
-                        </span>
-                      </div>
-                    </div>
-
-                    <div class="experiment-expand__section">
-                      <h4 class="experiment-expand__title">DAG Task</h4>
+                      <h4 class="experiment-expand__title">Artifacts</h4>
                       <div class="dag-task-info">
                         <div class="dag-task-info__row">
-                          <span class="dag-task-info__label">Task</span>
-                          <span class="dag-task-info__value">train_model{{ exp.tuned ? ' → optimize_hyperparams' : '' }}</span>
-                        </div>
-                        <div class="dag-task-info__row">
-                          <span class="dag-task-info__label">DAG Run ID</span>
-                          <span class="dag-task-info__value dag-task-info__value--mono">{{ exp.dagRunId }}</span>
-                        </div>
-                        <div class="dag-task-info__row">
-                          <button type="button" class="mock-link" (click)="viewInAirflow(exp, $event)">View in Airflow →</button>
-                          <button type="button" class="mock-link" (click)="viewExperiment(exp, $event)">View in MLflow →</button>
+                          <span class="dag-task-info__label">Artifact URI</span>
+                          <span class="dag-task-info__value dag-task-info__value--mono">{{ run.info.artifactUri }}</span>
                         </div>
                       </div>
                     </div>
@@ -284,58 +241,65 @@
                 </td>
               </tr>
             </ng-container>
-          </tbody>
-        </table>
-      </div>
-    </app-card>
-
-    <app-card class="comparison-card" *ngIf="showComparison">
-      <div class="comparison-card__header">
-        <h3 class="comparison-card__title">Comparing {{ selectedExperiments.length }} experiments</h3>
-        <button type="button" class="view-details" (click)="clearComparison()">Clear</button>
-      </div>
-
-      <div class="comparison-table-wrap">
-        <table class="comparison-table">
-          <thead>
-            <tr>
-              <th>Metric</th>
-              <th *ngFor="let exp of selectedExperiments">{{ exp.runId }}</th>
+            <tr *ngIf="allRuns.length === 0 && !isLoading">
+              <td class="models-table__empty" colspan="11">No experiment runs found.</td>
             </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let row of comparisonRows">
-              <td class="comparison-table__metric">{{ row.label }}</td>
-              <td *ngFor="let cell of row.cells" [class.comparison-table__cell--best]="cell?.isBest">
-                <ng-container *ngIf="cell; else noValue">
-                  <span *ngIf="cell.isBest">★ best </span>{{ cell.display }}
-                </ng-container>
-                <ng-template #noValue>—</ng-template>
-              </td>
+            <tr *ngIf="isLoading">
+              <td class="models-table__empty" colspan="11">Loading runs from MLflow…</td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <p class="comparison-diff" *ngIf="comparisonDifference">{{ comparisonDifference }}</p>
+      <div class="pagination" *ngIf="filteredRuns.length">
+        <div class="pagination__info">
+          Showing {{ (currentPage - 1) * pageSize + 1 }}–{{ Math.min(currentPage * pageSize, filteredRuns.length) }} of {{ filteredRuns.length }} runs
+        </div>
 
-      <div class="param-diff" *ngIf="paramDiffRows.length">
-        <h4 class="param-diff__title">Parameters</h4>
-        <div class="param-diff__row" *ngFor="let row of paramDiffRows" [class.param-diff__row--differs]="row.differs">
-          <span class="param-diff__key">{{ row.key }}</span>
-          <span class="param-diff__values">
-            <span class="param-diff__value" *ngFor="let value of row.values">{{ value }}</span>
-          </span>
+        <div class="pagination__controls">
+          <button type="button" class="pagination__btn" [disabled]="currentPage === 1" (click)="goToPage(currentPage - 1)">
+            Previous
+          </button>
+
+          <button type="button" *ngIf="currentPage > 3" class="pagination__btn" (click)="goToPage(1)">1</button>
+          <span *ngIf="currentPage > 4" class="pagination__ellipsis">...</span>
+
+          <button
+            type="button"
+            *ngFor="let page of pageNumbers"
+            class="pagination__btn"
+            [class.pagination__btn--active]="page === currentPage"
+            (click)="goToPage(page)"
+          >
+            {{ page }}
+          </button>
+
+          <span *ngIf="currentPage < totalPages - 3" class="pagination__ellipsis">...</span>
+          <button type="button" *ngIf="currentPage < totalPages - 2" class="pagination__btn" (click)="goToPage(totalPages)">
+            {{ totalPages }}
+          </button>
+
+          <button type="button" class="pagination__btn" [disabled]="currentPage === totalPages" (click)="goToPage(currentPage + 1)">
+            Next
+          </button>
+        </div>
+
+        <div class="pagination__size">
+          Rows per page:
+          <select [(ngModel)]="pageSize" (change)="onPageSizeChange()">
+            <option [value]="5">5</option>
+            <option [value]="10">10</option>
+            <option [value]="25">25</option>
+            <option [value]="50">50</option>
+          </select>
         </div>
       </div>
-
-      <app-button variant="primary" (clicked)="registerBestModel()">Register Best Model</app-button>
     </app-card>
   </ng-container>
 
 </div>
 
-<!-- ===================== MODEL DETAIL PANEL ===================== -->
+<!-- ===================== MODEL DETAIL / PROMOTION PANEL ===================== -->
 <div class="detail-overlay" *ngIf="selectedModel" (click)="closeDetail()"></div>
 
 <aside class="detail-panel" [class.detail-panel--open]="selectedModel">
@@ -345,45 +309,252 @@
     <div class="detail-panel__heading">
       <h2 class="detail-panel__title">{{ model.name }}</h2>
       <div class="detail-panel__badges">
-        <span class="framework-badge" [ngClass]="frameworkBadgeClass(model.framework)">{{ model.framework }}</span>
-        <span class="stage-badge" [ngClass]="stageBadgeClass(model.stage)">{{ model.stage }}</span>
+        <span class="stage-badge" [ngClass]="stageBadgeClass(latestVersion(model)?.currentStage)">
+          {{ latestVersion(model)?.currentStage || 'None' }}
+        </span>
       </div>
-      <span class="detail-panel__run-id">{{ model.runId }}</span>
-      <span class="version-pill detail-panel__version">{{ model.version }}</span>
+      <span class="version-pill detail-panel__version" *ngIf="latestVersion(model) as v">v{{ v.version }}</span>
     </div>
 
-    <!-- Section 1: Model Signature -->
-    <section class="detail-section" *ngIf="signatureOf(model) as sig">
-      <div class="detail-section__title-row">
-        <h3 class="detail-section__title">Model Signature</h3>
-        <span class="objective-badge">MLflow</span>
+    <section class="detail-section">
+      <h3 class="detail-section__title">Model Info</h3>
+      <div class="detail-grid">
+        <div class="detail-grid__item">
+          <span class="detail-grid__label">Description</span>
+          <span class="detail-grid__value">{{ model.description || '—' }}</span>
+        </div>
+        <div class="detail-grid__item">
+          <span class="detail-grid__label">Last Updated</span>
+          <span class="detail-grid__value">{{ model.lastUpdatedTimestamp ? (model.lastUpdatedTimestamp | date:'medium') : '—' }}</span>
+        </div>
+        <div class="detail-grid__item" *ngIf="latestVersion(model) as v">
+          <span class="detail-grid__label">Run ID</span>
+          <span class="detail-grid__value">{{ v.runId }}</span>
+        </div>
+        <div class="detail-grid__item" *ngIf="latestVersion(model) as v">
+          <span class="detail-grid__label">Source</span>
+          <span class="detail-grid__value">{{ v.source }}</span>
+        </div>
       </div>
+    </section>
 
-      <div class="signature-block__header">
-        <span class="signature-block__title">Input Schema</span>
-        <span class="signature-block__count">{{ sig.inputs.length }} inputs ({{ requiredCount(sig.inputs) }} required)</span>
+    <section class="detail-section">
+      <h3 class="detail-section__title">Versions</h3>
+      <div class="signature-table-wrap">
+        <table class="signature-table">
+          <thead>
+            <tr>
+              <th>Version</th>
+              <th>Stage</th>
+              <th>Status</th>
+              <th>Run ID</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let v of modelVersions" class="clickable-row" (click)="loadSignature(v)">
+              <td class="signature-table__name">v{{ v.version }}</td>
+              <td><span class="stage-badge" [ngClass]="stageBadgeClass(v.currentStage)">{{ v.currentStage }}</span></td>
+              <td><span class="badge" [ngClass]="statusBadgeClass(v.status)">{{ v.status }}</span></td>
+              <td class="signature-table__type">{{ v.runId }}</td>
+              <td class="view-details">View details →</td>
+            </tr>
+            <tr *ngIf="!modelVersions.length && !loadingVersions">
+              <td colspan="5">No versions found.</td>
+            </tr>
+            <tr *ngIf="loadingVersions">
+              <td colspan="5">Loading versions…</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="detail-section" *ngIf="canManage">
+      <ng-container *ngIf="!showPromotionForm">
+        <h3 class="detail-section__title">Promotion</h3>
+        <p class="promotion__hint">Request a stage promotion for the latest version of this model.</p>
+        <app-button variant="primary" [fullWidth]="true" [disabled]="!latestVersion(model)" (clicked)="openPromotionForm(latestVersion(model))">Request Promotion</app-button>
+      </ng-container>
+
+      <ng-container *ngIf="showPromotionForm">
+        <h3 class="detail-section__title">Request Promotion</h3>
+        <div class="detail-grid">
+          <div class="detail-grid__item">
+            <span class="detail-grid__label">Model</span>
+            <span class="detail-grid__value">{{ model.name }}</span>
+          </div>
+          <div class="detail-grid__item" *ngIf="latestVersion(model) as v">
+            <span class="detail-grid__label">Current Version</span>
+            <span class="detail-grid__value">v{{ v.version }}</span>
+          </div>
+        </div>
+        <div class="promotion__transition">
+          <span class="stage-badge" [ngClass]="stageBadgeClass(latestVersion(model)?.currentStage)">{{ latestVersion(model)?.currentStage || 'None' }}</span>
+          <span class="promotion__arrow">→</span>
+          <select class="models__select" [(ngModel)]="promotionToStage">
+            <option *ngFor="let stage of promotionStages" [value]="stage">{{ stage }}</option>
+          </select>
+        </div>
+        <textarea
+          class="promotion__textarea"
+          rows="3"
+          placeholder="Why is this model ready for promotion?"
+          [(ngModel)]="promotionComment"
+        ></textarea>
+        <div class="promotion__actions">
+          <app-button variant="secondary" [fullWidth]="true" (clicked)="cancelPromotionForm()">Cancel</app-button>
+          <app-button
+            variant="primary"
+            [fullWidth]="true"
+            [disabled]="submittingPromotion"
+            (clicked)="submitPromotionRequest()"
+          >
+            <span class="dvc-spinner" *ngIf="submittingPromotion"></span>{{ submittingPromotion ? 'Submitting...' : 'Submit Promotion Request' }}
+          </app-button>
+        </div>
+      </ng-container>
+    </section>
+
+    <div class="detail-panel__actions">
+      <app-button variant="secondary" [fullWidth]="true" (clicked)="closeDetail()">Close</app-button>
+    </div>
+  </ng-container>
+</aside>
+
+<!-- ===================== ADMIN REVIEW PANEL ===================== -->
+<div class="detail-overlay" *ngIf="showReviewPanel" (click)="closeReviewPanel()"></div>
+
+<aside class="detail-panel" [class.detail-panel--open]="showReviewPanel">
+  <button type="button" class="detail-panel__close" (click)="closeReviewPanel()" aria-label="Close">×</button>
+
+  <div class="detail-panel__heading">
+    <h2 class="detail-panel__title">Pending Promotions</h2>
+    <p class="promotion__hint">{{ pendingPromotions.length }} request{{ pendingPromotions.length !== 1 ? 's' : '' }} awaiting review</p>
+  </div>
+
+  <section class="detail-section" *ngFor="let promotion of pendingPromotions">
+    <div class="detail-grid">
+      <div class="detail-grid__item">
+        <span class="detail-grid__label">Model</span>
+        <span class="detail-grid__value">{{ promotion.modelName }} (v{{ promotion.modelVersion }})</span>
+      </div>
+      <div class="detail-grid__item">
+        <span class="detail-grid__label">Requested by</span>
+        <span class="detail-grid__value">{{ promotion.requestedBy }}</span>
+      </div>
+      <div class="detail-grid__item">
+        <span class="detail-grid__label">Requested at</span>
+        <span class="detail-grid__value">{{ promotion.requestedAt | date:'medium' }}</span>
+      </div>
+    </div>
+    <div class="promotion__transition">
+      <span class="stage-badge" [ngClass]="stageBadgeClass(promotion.fromStage)">{{ promotion.fromStage }}</span>
+      <span class="promotion__arrow">→</span>
+      <span class="stage-badge" [ngClass]="stageBadgeClass(promotion.toStage)">{{ promotion.toStage }}</span>
+    </div>
+    <p class="promotion__comment" *ngIf="promotion.comment">"{{ promotion.comment }}"</p>
+
+    <div class="promotion__actions" *ngIf="rejectingId !== promotion.id">
+      <app-button variant="secondary" [fullWidth]="true" [disabled]="approvingId === promotion.id" (clicked)="approvePromotion(promotion)">
+        <span class="dvc-spinner" *ngIf="approvingId === promotion.id"></span>{{ approvingId === promotion.id ? 'Approving...' : '✓ Approve' }}
+      </app-button>
+      <app-button variant="danger" [fullWidth]="true" [disabled]="approvingId === promotion.id" (clicked)="startReject(promotion)">✗ Reject</app-button>
+    </div>
+
+    <div class="promotion__reject-form" *ngIf="rejectingId === promotion.id">
+      <textarea
+        class="promotion__textarea"
+        rows="3"
+        placeholder="Reason for rejection..."
+        [(ngModel)]="rejectReason"
+      ></textarea>
+      <div class="promotion__actions">
+        <app-button variant="secondary" [fullWidth]="true" (clicked)="cancelReject()">Cancel</app-button>
+        <app-button variant="danger" [fullWidth]="true" [disabled]="rejectingInFlight" (clicked)="confirmReject(promotion)">Confirm Rejection</app-button>
+      </div>
+    </div>
+  </section>
+
+  <p class="promotion__hint" *ngIf="!pendingPromotions.length">No promotion requests pending review.</p>
+</aside>
+
+<!-- ===================== VERSION DETAIL MODAL ===================== -->
+<div class="version-modal-overlay" *ngIf="showVersionModal" (click)="closeVersionModal()"></div>
+
+<div class="version-modal" *ngIf="showVersionModal">
+  <button type="button" class="detail-panel__close" (click)="closeVersionModal()" aria-label="Close">×</button>
+
+  <div class="version-modal__header">
+    <h2 class="detail-panel__title">Version {{ selectedVersion?.version }}</h2>
+    <div class="detail-panel__badges" *ngIf="selectedVersion as v">
+      <span class="badge" [ngClass]="statusBadgeClass(v.status)">{{ v.status }}</span>
+      <span class="stage-badge" [ngClass]="stageBadgeClass(v.currentStage)">{{ v.currentStage }}</span>
+    </div>
+  </div>
+
+  <p class="promotion__hint" *ngIf="isLoadingSignature">Loading model signature…</p>
+
+  <ng-container *ngIf="!isLoadingSignature">
+    <section class="detail-section" *ngIf="selectedVersion as v">
+      <h3 class="detail-section__title">Model Info</h3>
+      <div class="detail-grid">
+        <div class="detail-grid__item">
+          <span class="detail-grid__label">Run Name</span>
+          <span class="detail-grid__value">{{ selectedRun?.info?.runName || '—' }}</span>
+        </div>
+        <div class="detail-grid__item">
+          <span class="detail-grid__label">Run ID</span>
+          <span class="detail-grid__value detail-panel__run-id">{{ v.runId }}</span>
+        </div>
+        <div class="detail-grid__item">
+          <span class="detail-grid__label">Registered</span>
+          <span class="detail-grid__value">{{ v.creationTimestamp ? (v.creationTimestamp | date:'medium') : '—' }}</span>
+        </div>
+        <div class="detail-grid__item">
+          <span class="detail-grid__label">Last Modified</span>
+          <span class="detail-grid__value">{{ v.lastUpdatedTimestamp ? (v.lastUpdatedTimestamp | date:'medium') : '—' }}</span>
+        </div>
+        <div class="detail-grid__item" *ngIf="selectedSignature as sig">
+          <span class="detail-grid__label">Framework</span>
+          <span class="detail-grid__value">{{ sig.flavor || '—' }}</span>
+        </div>
+        <div class="detail-grid__item" *ngIf="selectedSignature as sig">
+          <span class="detail-grid__label">Framework Version</span>
+          <span class="detail-grid__value">{{ sig.frameworkVersion || '—' }}</span>
+        </div>
+        <div class="detail-grid__item" *ngIf="selectedSignature as sig">
+          <span class="detail-grid__label">MLflow Version</span>
+          <span class="detail-grid__value">{{ sig.mlflowVersion || '—' }}</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="detail-section" *ngIf="selectedSignature as sig; else noSignature">
+      <div class="detail-section__title-row">
+        <h3 class="detail-section__title">Input Schema</h3>
+        <span class="objective-badge">{{ sig.inputs.length }} feature{{ sig.inputs.length !== 1 ? 's' : '' }}</span>
       </div>
       <div class="signature-table-wrap">
         <table class="signature-table">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Data Type</th>
-              <th>Shape</th>
+              <th>Feature Name</th>
+              <th>Type</th>
               <th>Required</th>
-              <th>Description</th>
             </tr>
           </thead>
           <tbody>
             <tr *ngFor="let field of sig.inputs">
               <td class="signature-table__name">{{ field.name }}</td>
-              <td class="signature-table__type">{{ field.dataType }}</td>
-              <td class="signature-table__shape">{{ field.shape }}</td>
+              <td><span class="type-badge" [ngClass]="typeBadgeClass(field.type)">{{ field.type }}</span></td>
               <td>
-                <span class="signature-table__req signature-table__req--yes" *ngIf="field.required">✓</span>
-                <span class="signature-table__req signature-table__req--no" *ngIf="!field.required">✗</span>
+                <span class="signature-table__req signature-table__req--yes" *ngIf="field.required">Required</span>
+                <span class="signature-table__req signature-table__req--no" *ngIf="!field.required">Optional</span>
               </td>
-              <td class="signature-table__desc">{{ field.description }}</td>
+            </tr>
+            <tr *ngIf="!sig.inputs.length">
+              <td colspan="3">No input schema available.</td>
             </tr>
           </tbody>
         </table>
@@ -391,289 +562,96 @@
 
       <div class="signature-block__header">
         <span class="signature-block__title">Output Schema</span>
-        <span class="signature-block__count">{{ sig.outputs.length }} outputs</span>
       </div>
       <div class="signature-table-wrap">
         <table class="signature-table">
           <thead>
             <tr>
               <th>Name</th>
-              <th>Data Type</th>
+              <th>Type</th>
               <th>Shape</th>
-              <th>Description</th>
             </tr>
           </thead>
           <tbody>
             <tr *ngFor="let field of sig.outputs">
               <td class="signature-table__name">{{ field.name }}</td>
-              <td class="signature-table__type">{{ field.dataType }}</td>
-              <td class="signature-table__shape">{{ field.shape }}</td>
-              <td class="signature-table__desc">{{ field.description }}</td>
+              <td class="signature-table__type">{{ outputTypeLabel(field) }}</td>
+              <td class="signature-table__shape">{{ outputShapeLabel(field) }}</td>
+            </tr>
+            <tr *ngIf="!sig.outputs.length">
+              <td colspan="3">No output schema available.</td>
             </tr>
           </tbody>
         </table>
       </div>
-
-      <div class="signature-meta">
-        <div class="signature-meta__item">
-          <span class="signature-meta__label">MLflow Schema Version</span>
-          <span class="signature-meta__value">{{ sig.schemaVersion }}</span>
-        </div>
-        <div class="signature-meta__item">
-          <span class="signature-meta__label">Registered</span>
-          <span class="signature-meta__value">{{ model.createdAt }}</span>
-        </div>
-        <div class="signature-meta__item">
-          <span class="signature-meta__label">Serialization</span>
-          <span class="signature-meta__value">{{ sig.serialization }}</span>
-        </div>
-        <div class="signature-meta__item">
-          <span class="signature-meta__label">Python Version</span>
-          <span class="signature-meta__value">{{ sig.pythonVersion }}</span>
-        </div>
-      </div>
-
-      <div class="example-payload">
-        <button type="button" class="example-payload__toggle" (click)="toggleExamplePayload()">
-          <span class="example-payload__chevron" [class.example-payload__chevron--open]="examplePayloadOpen">▶</span>
-          Example Payload
-        </button>
-        <div class="json-block" *ngIf="examplePayloadOpen">
-          <div class="json-block__header">
-            <span class="json-block__title">example_payload.json</span>
-            <button type="button" class="json-block__copy" (click)="copyExamplePayload(model)">Copy</button>
-          </div>
-          <pre class="json-block__body"><span class="json-block__label">// Input</span>
-<span [innerHTML]="highlightedInputExample(model)"></span>
-
-<span class="json-block__label">// Output</span>
-<span [innerHTML]="highlightedOutputExample(model)"></span></pre>
-        </div>
-      </div>
     </section>
+    <ng-template #noSignature>
+      <section class="detail-section">
+        <h3 class="detail-section__title">Model Signature</h3>
+        <p class="promotion__hint">No signature could be loaded for this version — the MLmodel artifact may be missing or unreadable.</p>
+      </section>
+    </ng-template>
 
-    <section class="detail-section">
+    <section class="detail-section" *ngIf="selectedRun as run">
       <h3 class="detail-section__title">Performance Metrics</h3>
-      <div class="metric-bars">
-        <div class="metric-bar" *ngFor="let metric of metricsList(model.metrics)">
-          <div class="metric-bar__row">
-            <span class="metric-bar__label">{{ metric.label }}</span>
-            <span class="metric-bar__value">{{ formatMetricValue(metric.label, metric.value) }}</span>
-          </div>
-          <div class="metric-bar__track">
-            <div class="metric-bar__fill" [style.width.%]="metricBarsAnimated ? barWidth(metric.label, metric.value) : 0"></div>
-          </div>
+      <div class="metric-cards" *ngIf="run.data.metrics.length; else noMetrics">
+        <div class="metric-card" *ngIf="metricByKey('roc_auc') !== null">
+          <span class="metric-card__label">ROC AUC</span>
+          <span class="metric-card__value">{{ metricByKey('roc_auc') | percent:'1.1-1' }}</span>
+        </div>
+        <div class="metric-card" *ngIf="metricByKey('f1_class1') !== null">
+          <span class="metric-card__label">F1 Score</span>
+          <span class="metric-card__value">{{ metricByKey('f1_class1') | percent:'1.1-1' }}</span>
+        </div>
+        <div class="metric-card" *ngIf="metricByKey('precision_class1') !== null">
+          <span class="metric-card__label">Precision</span>
+          <span class="metric-card__value">{{ metricByKey('precision_class1') | percent:'1.1-1' }}</span>
+        </div>
+        <div class="metric-card" *ngIf="metricByKey('recall_class1') !== null">
+          <span class="metric-card__label">Recall</span>
+          <span class="metric-card__value">{{ metricByKey('recall_class1') | percent:'1.1-1' }}</span>
+        </div>
+        <div class="metric-card" *ngIf="metricByKey('n_total') !== null">
+          <span class="metric-card__label">Training Samples</span>
+          <span class="metric-card__value">{{ metricByKey('n_total') | number:'1.0-0' }}</span>
+        </div>
+        <div class="metric-card" *ngIf="metricByKey('n_real') !== null">
+          <span class="metric-card__label">Real Samples</span>
+          <span class="metric-card__value">{{ metricByKey('n_real') | number:'1.0-0' }}</span>
+        </div>
+        <div class="metric-card" *ngIf="metricByKey('n_abs') !== null">
+          <span class="metric-card__label">ABS-Augmented</span>
+          <span class="metric-card__value">{{ metricByKey('n_abs') | number:'1.0-0' }}</span>
+        </div>
+        <div class="metric-card" *ngIf="metricByKey('n_gan') !== null">
+          <span class="metric-card__label">GAN-Augmented</span>
+          <span class="metric-card__value">{{ metricByKey('n_gan') | number:'1.0-0' }}</span>
         </div>
       </div>
+      <ng-template #noMetrics>
+        <p class="promotion__hint">No metrics logged for this run.</p>
+      </ng-template>
     </section>
 
-    <section class="detail-section" *ngIf="pipelineOriginOf(model) as origin">
-      <h3 class="detail-section__title">Pipeline Origin</h3>
-      <div class="pipeline-origin">
-        <div class="pipeline-origin__row">
-          <span class="pipeline-origin__label">DAG</span>
-          <span class="pipeline-origin__value">talys_mlops_pipeline</span>
-        </div>
-        <div class="pipeline-origin__row">
-          <span class="pipeline-origin__label">DAG Run</span>
-          <span class="pipeline-origin__value pipeline-origin__value--mono">{{ origin.dagRunId }}</span>
-        </div>
-        <div class="pipeline-origin__row">
-          <span class="pipeline-origin__label">Triggered by</span>
-          <span class="pipeline-origin__value">{{ origin.triggeredBy }}</span>
-        </div>
-        <div class="pipeline-origin__row">
-          <span class="pipeline-origin__label">Tasks completed</span>
-          <span class="pipeline-origin__value">{{ origin.tasksCompleted }}/{{ origin.tasksTotal }} ✓</span>
-        </div>
-        <div class="pipeline-origin__row">
-          <span class="pipeline-origin__label">Train task</span>
-          <span class="pipeline-origin__value">train_model ✓</span>
-        </div>
-        <div class="pipeline-origin__row">
-          <span class="pipeline-origin__label">Tuning task</span>
-          <span class="pipeline-origin__value" *ngIf="origin.tuned; else notTuned">optimize_hyperparams ✓ (Optuna, {{ origin.tuningTrials }} trials)</span>
-          <ng-template #notTuned><span class="pipeline-origin__value pipeline-origin__value--muted">optimize_hyperparams — skipped</span></ng-template>
-        </div>
-        <div class="pipeline-origin__row">
-          <span class="pipeline-origin__label">Evaluation task</span>
-          <span class="pipeline-origin__value">evaluate_model ✓</span>
-        </div>
-        <div class="pipeline-origin__row">
-          <span class="pipeline-origin__label">Drift check</span>
-          <span class="pipeline-origin__value">monitor_drift ✓ ({{ origin.driftDetected ? 'drift detected' : 'no drift detected' }})</span>
-        </div>
-      </div>
-      <a class="pipeline-origin__link" routerLink="/pipelines">View DAG Run →</a>
-    </section>
-
-    <section class="detail-section">
-      <h3 class="detail-section__title">Stage Lifecycle</h3>
-      <div class="stage-lifecycle">
-        <ng-container *ngFor="let stage of stagesForLifecycle(); let last = last">
-          <div class="stage-lifecycle__step">
-            <div class="stage-lifecycle__circle" [ngClass]="'stage-lifecycle__circle--' + stageState(model, stage)"></div>
-            <span class="stage-lifecycle__label" [ngClass]="'stage-lifecycle__label--' + stageState(model, stage)">{{ stage }}</span>
-          </div>
-          <div class="stage-lifecycle__connector" *ngIf="!last" [ngClass]="'stage-lifecycle__connector--' + stageState(model, stage)"></div>
-        </ng-container>
-      </div>
-    </section>
-
-    <section class="detail-section">
-      <ng-container [ngSwitch]="promotionPanelState">
-
-        <!-- STATE A: requestable -->
-        <div *ngSwitchCase="'requestable'">
-          <h3 class="detail-section__title">Request Promotion</h3>
-          <p class="promotion__hint">Promote to next stage</p>
-          <div class="promotion__transition">
-            <span class="stage-badge" [ngClass]="stageBadgeClass(model.stage)">{{ model.stage }}</span>
-            <span class="promotion__arrow">→</span>
-            <span class="stage-badge" [ngClass]="stageBadgeClass(selectedModelNextStage!)" *ngIf="selectedModelNextStage">{{ selectedModelNextStage }}</span>
-          </div>
-          <textarea
-            class="promotion__textarea"
-            rows="3"
-            placeholder="Why is this model ready for promotion?"
-            [(ngModel)]="promotionComment"
-          ></textarea>
-          <app-button
-            variant="primary"
-            [fullWidth]="true"
-            [disabled]="submittingPromotion"
-            (clicked)="submitPromotionRequest(model)"
-          >
-            <span class="dvc-spinner" *ngIf="submittingPromotion"></span>{{ submittingPromotion ? 'Submitting...' : 'Submit Promotion Request' }}
-          </app-button>
-        </div>
-
-        <!-- STATE B: pending -->
-        <div *ngSwitchCase="'pending'">
-          <div class="promotion__banner promotion__banner--warning">Promotion request pending review</div>
-          <div class="promotion__details" *ngIf="model.promotionRequest as request">
-            <div class="detail-grid">
-              <div class="detail-grid__item">
-                <span class="detail-grid__label">Requested by</span>
-                <span class="detail-grid__value">{{ request.requestedBy }}</span>
-              </div>
-              <div class="detail-grid__item">
-                <span class="detail-grid__label">Requested at</span>
-                <span class="detail-grid__value">{{ request.requestedAt }}</span>
-              </div>
-            </div>
-            <div class="promotion__transition">
-              <span class="stage-badge" [ngClass]="stageBadgeClass(model.stage)">{{ request.fromStage }}</span>
-              <span class="promotion__arrow">→</span>
-              <span class="stage-badge" [ngClass]="'stage-badge--' + request.toStage.toLowerCase()">{{ request.toStage }}</span>
-            </div>
-            <p class="promotion__comment">"{{ request.comment }}"</p>
-
-            <div class="promotion__actions" *ngIf="!showRejectForm">
-              <app-button variant="secondary" [fullWidth]="true" [disabled]="approvingPromotion" (clicked)="approvePromotion(model)">
-                <span class="dvc-spinner" *ngIf="approvingPromotion"></span>{{ approvingPromotion ? 'Approving...' : '✓ Approve' }}
-              </app-button>
-              <app-button variant="danger" [fullWidth]="true" [disabled]="approvingPromotion" (clicked)="startReject()">✗ Reject</app-button>
-            </div>
-
-            <div class="promotion__reject-form" *ngIf="showRejectForm">
-              <textarea
-                class="promotion__textarea"
-                rows="3"
-                placeholder="Reason for rejection..."
-                [(ngModel)]="rejectReason"
-              ></textarea>
-              <div class="promotion__actions">
-                <app-button variant="secondary" [fullWidth]="true" (clicked)="cancelReject()">Cancel</app-button>
-                <app-button variant="danger" [fullWidth]="true" (clicked)="confirmRejection(model)">Confirm Rejection</app-button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- STATE C: production -->
-        <div *ngSwitchCase="'production'">
-          <div class="promotion__banner promotion__banner--success">✓ This model is live in Production</div>
-          <app-button variant="danger" [fullWidth]="true" (clicked)="rollbackToStaging(model)">Rollback to Staging</app-button>
-        </div>
-
-        <!-- terminal / archived fallback -->
-        <div *ngSwitchDefault>
-          <h3 class="detail-section__title">Promotion</h3>
-          <p class="promotion__hint">This model is archived and cannot be promoted further.</p>
-        </div>
-      </ng-container>
-    </section>
-
-    <!-- Section 5: Deployment Info (Production models only) -->
-    <section class="detail-section" *ngIf="model.stage === 'Production' && deploymentInfoOf(model) as deploy">
-      <h3 class="detail-section__title">Deployment Info</h3>
-      <div class="k8s-info">
-        <div class="k8s-info__row">
-          <span class="k8s-info__label">Kubernetes Replicas</span>
-          <span class="k8s-info__value">
-            {{ deploy.readyReplicas }}/{{ deploy.totalReplicas }}
-            <span class="k8s-info__dots">
-              <span class="k8s-info__dot" *ngFor="let dot of replicaDots(deploy)"></span>
-            </span>
-          </span>
-        </div>
-        <div class="k8s-info__row">
-          <span class="k8s-info__label">Image</span>
-          <span class="k8s-info__value k8s-info__value--mono">{{ selectedModelImage }}</span>
-        </div>
-        <div class="k8s-info__row">
-          <span class="k8s-info__label">Last Deploy</span>
-          <span class="k8s-info__value">{{ deploy.lastDeploy }}</span>
-        </div>
-        <div class="k8s-info__row">
-          <span class="k8s-info__label">Endpoint</span>
-          <span class="k8s-info__endpoint">
-            <span class="k8s-info__value--mono">{{ deploy.endpoint }}</span>
-            <button type="button" class="json-block__copy" (click)="copyEndpoint(deploy)">Copy</button>
-          </span>
-        </div>
-        <div class="k8s-info__row">
-          <span class="k8s-info__label">Avg Latency</span>
-          <span class="k8s-info__value">{{ deploy.avgLatency }}ms</span>
-        </div>
-        <div class="k8s-info__row">
-          <span class="k8s-info__label">Requests/min</span>
-          <span class="k8s-info__value">{{ deploy.requestsPerMin | number }}</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- Section 6: Tags + Actions -->
-    <section class="detail-section">
-      <h3 class="detail-section__title">Tags</h3>
-      <div class="detail-tags">
-        <span class="tag" *ngFor="let tag of model.tags">{{ tag }}</span>
+    <section class="detail-section" *ngIf="selectedRun as run">
+      <h3 class="detail-section__title">Training Parameters</h3>
+      <div class="param-pills">
+        <span class="param-pill" *ngFor="let param of run.data.params">
+          <span class="param-pill__key">{{ param.key }}</span>:<span class="param-pill__value">{{ param.value }}</span>
+        </span>
+        <span *ngIf="!run.data.params.length">No parameters logged.</span>
       </div>
     </section>
 
     <div class="detail-panel__actions">
-      <app-button variant="primary" [fullWidth]="true" (clicked)="downloadModel(model)">Download Model</app-button>
-      <app-button variant="secondary" [fullWidth]="true" (clicked)="toggleTestEndpoint(model)">Test Endpoint</app-button>
-      <app-button variant="secondary" [fullWidth]="true" (clicked)="viewInMlflow(model)">View in MLflow</app-button>
-      <button type="button" class="action-btn action-btn--danger-outline" (click)="archiveModel(model)">Archive Model</button>
-    </div>
-
-    <div class="test-endpoint" *ngIf="testEndpointOpen">
-      <h4 class="test-endpoint__title">Test Endpoint</h4>
-      <textarea class="test-endpoint__textarea" rows="6" [(ngModel)]="testRequestBody"></textarea>
-      <app-button variant="primary" [fullWidth]="true" [disabled]="testRequestSending" (clicked)="sendTestRequest(model)">
-        <span class="dvc-spinner" *ngIf="testRequestSending"></span>{{ testRequestSending ? 'Sending...' : 'Send Request ▶' }}
-      </app-button>
-
-      <div class="test-endpoint__response" *ngIf="testResponse">
-        <div class="test-endpoint__meta">
-          <span class="test-endpoint__status">Status: {{ testResponse.status }}</span>
-          <span class="test-endpoint__latency">Latency: {{ testResponse.latency }}ms</span>
-        </div>
-        <pre class="json-block__body" [innerHTML]="testResponse.body"></pre>
-        <button type="button" class="view-details" (click)="clearTestEndpoint(model)">Clear</button>
-      </div>
+      <a class="action-btn action-btn--accent-outline version-modal__mlflow-link" [href]="runMlflowLink()" target="_blank" rel="noopener">View in MLflow →</a>
+      <app-button
+        variant="primary"
+        [fullWidth]="true"
+        *ngIf="canManage && selectedVersion && selectedVersion.currentStage !== 'Production'"
+        (clicked)="requestPromotionFromVersion()"
+      >Request Promotion</app-button>
+      <app-button variant="secondary" [fullWidth]="true" (clicked)="closeVersionModal()">Close</app-button>
     </div>
   </ng-container>
-</aside>
+</div>

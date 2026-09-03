@@ -4,9 +4,9 @@
       <h1 class="settings__title">Settings</h1>
       <p class="settings__subtitle">Configure your NexusML integrations and credentials</p>
     </div>
-    <app-button variant="primary" [disabled]="!hasUnsavedChanges || saving" (clicked)="saveAll()">
+    <app-button variant="primary" [disabled]="editingIntegrations.size === 0" (clicked)="saveAllIntegrations()">
       <span class="settings__save-dot" *ngIf="hasUnsavedChanges"></span>
-      {{ saving ? 'Saving...' : 'Save All Changes' }}
+      Save All Changes
     </app-button>
   </div>
 
@@ -23,21 +23,32 @@
         <div
           class="integration-card"
           *ngFor="let integration of integrations"
-          [class.integration-card--dirty]="integration.dirty"
+          [class.integration-card--dirty]="isDirty(integration.id)"
         >
           <div class="integration-card__top">
             <div class="integration-card__identity">
-              <div class="integration-card__icon">{{ integration.icon }}</div>
+              <div class="integration-card__icon">{{ integrationIcon(integration.id) }}</div>
               <div>
                 <div class="integration-card__name">{{ integration.name }}</div>
-                <div class="integration-card__description">{{ integration.description }}</div>
+                <div class="integration-card__description">{{ integrationDescription(integration.id) }}</div>
               </div>
             </div>
             <div class="integration-card__meta">
               <span class="badge" [ngClass]="statusBadgeClass(integration.status)">{{ integration.status }}</span>
-              <app-button variant="secondary" [disabled]="integration.testing" (clicked)="testConnection(integration)">
-                <span class="spinner" *ngIf="integration.testing"></span>
-                {{ integration.testing ? 'Testing...' : 'Test connection' }}
+              <app-button
+                variant="secondary"
+                [disabled]="isTesting(integration.id)"
+                (clicked)="testIntegration(integration.id)"
+              >
+                <span class="spinner" *ngIf="isTesting(integration.id)"></span>
+                {{ isTesting(integration.id) ? 'Testing...' : 'Test connection' }}
+              </app-button>
+              <app-button
+                *ngIf="isDirty(integration.id)"
+                variant="primary"
+                (clicked)="saveIntegration(integration.id)"
+              >
+                Save
               </app-button>
             </div>
           </div>
@@ -47,22 +58,25 @@
               type="text"
               class="field field--url"
               placeholder="http://localhost"
-              [(ngModel)]="integration.url"
-              (ngModelChange)="onFieldChange(integration)"
+              [value]="displayedUrl(integration)"
+              (input)="onUrlChange(integration.id, $any($event.target).value)"
             />
             <input
               type="number"
               class="field field--port"
               placeholder="8080"
-              [(ngModel)]="integration.port"
-              (ngModelChange)="onFieldChange(integration)"
+              [value]="displayedPort(integration)"
+              (input)="onPortChange(integration.id, +$any($event.target).value)"
             />
           </div>
 
           <div class="integration-card__footer" *ngIf="integration.lastTested">
-            Last tested: {{ integration.lastTested }}
+            Last tested: {{ integration.lastTested | date:'medium' }}
           </div>
         </div>
+
+        <p class="integration-list__hint" *ngIf="!integrations.length && !isLoadingIntegrations">No integrations configured.</p>
+        <p class="integration-list__hint" *ngIf="isLoadingIntegrations">Loading integrations…</p>
       </div>
     </div>
 

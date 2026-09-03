@@ -2,14 +2,16 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
-import { environment } from '../../../environments/environment';
+import { RuntimeConfigService } from './runtime-config.service';
 import { CreateCredentialRequest, Credential } from '../models/credential.model';
 
 @Injectable({ providedIn: 'root' })
 export class CredentialService {
-  private readonly apiUrl = `${environment.apiUrl}/api/identity/credentials`;
+  private get apiUrl(): string {
+    return `${this.runtimeConfig.apiUrl}/api/identity/credentials`;
+  }
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient, private runtimeConfig: RuntimeConfigService) {}
 
   getAll(): Observable<Credential[]> {
     return this.http.get<Credential[]>(this.apiUrl);

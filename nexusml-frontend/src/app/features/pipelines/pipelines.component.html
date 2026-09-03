@@ -149,7 +149,7 @@
       ✓ Pipeline completed — <a routerLink="/models-management">results available in Models page</a>
     </div>
     <div class="active-run__footer" *ngIf="activeRun.status === 'failed'">
-      ✗ Pipeline failed — <a href="http://localhost:8080" target="_blank" rel="noopener">check Airflow logs</a>
+      ✗ Pipeline failed — <a [href]="airflowUrl" target="_blank" rel="noopener">check Airflow logs</a>
     </div>
   </div>
 

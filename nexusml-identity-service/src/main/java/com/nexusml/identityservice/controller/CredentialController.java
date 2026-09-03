@@ -29,14 +29,14 @@ public class CredentialController {
     private final CredentialService credentialService;
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DATA_SCIENTIST')")
     public ResponseEntity<List<CredentialDTO>> getAllCredentials() {
         return ResponseEntity.ok(
             credentialService.getAllCredentials());
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DATA_SCIENTIST')")
     public ResponseEntity<CredentialDTO> createCredential(
             @Valid @RequestBody CreateCredentialRequest request,
             JwtAuthenticationToken authentication) {
@@ -46,7 +46,7 @@ public class CredentialController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DATA_SCIENTIST')")
     public ResponseEntity<CredentialDTO> updateCredential(
             @PathVariable String id,
             @Valid @RequestBody CreateCredentialRequest request,
@@ -57,7 +57,7 @@ public class CredentialController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DATA_SCIENTIST')")
     public ResponseEntity<Void> deleteCredential(
             @PathVariable String id,
             JwtAuthenticationToken authentication) {

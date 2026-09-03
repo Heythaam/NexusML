@@ -5,6 +5,7 @@ import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.TopicExchange;
+import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
@@ -37,6 +38,23 @@ public class RabbitMQConfig {
             .with("pipeline.*");
     }
 
+    // Named per-service (not just "integration.events") so this queue gets its
+    // own fanned-out copy of every integration.updated event — a name shared
+    // with model-service's queue would make them competing consumers on the
+    // same queue instead of each independently receiving every message.
+    @Bean
+    public Queue integrationEventsQueue() {
+        return new Queue("integration.events.pipeline-service", true);
+    }
+
+    @Bean
+    public Binding integrationBinding(Queue integrationEventsQueue, TopicExchange nexusmlExchange) {
+        return BindingBuilder
+            .bind(integrationEventsQueue)
+            .to(nexusmlExchange)
+            .with("integration.*");
+    }
+
     @Bean
     public MessageConverter jsonMessageConverter() {
         return new Jackson2JsonMessageConverter();
@@ -47,5 +65,15 @@ public class RabbitMQConfig {
         RabbitTemplate template = new RabbitTemplate(connectionFactory);
         template.setMessageConverter(jsonMessageConverter());
         return template;
+    }
+
+    @Bean
+    public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
+            ConnectionFactory connectionFactory,
+            MessageConverter jsonMessageConverter) {
+        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+        factory.setConnectionFactory(connectionFactory);
+        factory.setMessageConverter(jsonMessageConverter);
+        return factory;
     }
 }

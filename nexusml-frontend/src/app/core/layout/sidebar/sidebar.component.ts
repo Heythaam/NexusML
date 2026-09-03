@@ -22,7 +22,7 @@ export class SidebarComponent {
     { path: '/models-management', label: 'Models', icon: '◈' },
     { path: '/monitoring', label: 'Monitoring', icon: '◔' },
     { path: '/datasets', label: 'Datasets', icon: '▤' },
-    { path: '/settings', label: 'Settings', icon: '⚙', dividerBefore: true, roles: ['ADMIN'] }
+    { path: '/settings', label: 'Settings', icon: '⚙', dividerBefore: true, roles: ['ADMIN', 'DATA_SCIENTIST'] }
   ];
 
   constructor(public auth: AuthService) {}

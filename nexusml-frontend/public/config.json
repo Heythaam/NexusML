@@ -1,0 +1,11 @@
+{
+  "apiUrl": "http://localhost:8085",
+  "mlflowUrl": "http://localhost:5001",
+  "airflowUrl": "http://localhost:8080",
+  "frontendUrl": "http://localhost:4300",
+  "keycloak": {
+    "url": "http://localhost:8180",
+    "realm": "nexusml",
+    "clientId": "nexusml-frontend"
+  }
+}

@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, interval } from 'rxjs';
 import { switchMap, takeWhile } from 'rxjs/operators';
 
-import { environment } from '../../../environments/environment';
+import { RuntimeConfigService } from './runtime-config.service';
 import {
   AirflowConnectionStatus,
   AirflowDag,
@@ -14,9 +14,11 @@ import {
 
 @Injectable({ providedIn: 'root' })
 export class PipelineApiService {
-  private readonly apiUrl = `${environment.apiUrl}/api/pipelines`;
+  private get apiUrl(): string {
+    return `${this.runtimeConfig.apiUrl}/api/pipelines`;
+  }
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient, private runtimeConfig: RuntimeConfigService) {}
 
   triggerPipeline(request: TriggerPipelineRequest): Observable<PipelineRun> {
     return this.http.post<PipelineRun>(`${this.apiUrl}/trigger`, request);

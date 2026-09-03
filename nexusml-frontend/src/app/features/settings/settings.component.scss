@@ -86,6 +86,12 @@
   gap: 16px;
 }
 
+.integration-list__hint {
+  padding: 16px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
 .integration-card {
   padding: 20px;
   background: var(--bg-card);

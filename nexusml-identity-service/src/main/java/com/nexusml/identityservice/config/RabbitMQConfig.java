@@ -18,6 +18,7 @@ public class RabbitMQConfig {
     public static final String AUDIT_QUEUE = "audit.events";
     public static final String AUDIT_EXCHANGE = "nexusml.exchange";
     public static final String AUDIT_ROUTING_KEY = "audit.log";
+    public static final String INTEGRATION_UPDATED_KEY = "integration.updated";
 
     @Bean
     public Queue auditQueue() {

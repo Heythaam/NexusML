@@ -5,8 +5,8 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
 
+import com.nexusml.pipelineservice.config.DynamicAirflowConfig;
 import com.nexusml.pipelineservice.dto.AirflowDagDTO;
 import com.nexusml.pipelineservice.dto.AirflowDagRunResponse;
 import com.nexusml.pipelineservice.dto.AirflowDagRunsResponse;
@@ -21,13 +21,13 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class AirflowClient {
 
-    private final WebClient airflowWebClient;
+    private final DynamicAirflowConfig dynamicAirflowConfig;
 
     public AirflowDagRunResponse triggerDag(String dagId, Map<String, Object> conf) {
         Map<String, Object> body = new HashMap<>();
         body.put("conf", conf != null ? conf : new HashMap<>());
 
-        return airflowWebClient.post()
+        return dynamicAirflowConfig.getWebClient().post()
             .uri("/api/v1/dags/{dagId}/dagRuns", dagId)
             .bodyValue(body)
             .retrieve()
@@ -36,7 +36,7 @@ public class AirflowClient {
     }
 
     public AirflowDagRunResponse getDagRunStatus(String dagId, String dagRunId) {
-        return airflowWebClient.get()
+        return dynamicAirflowConfig.getWebClient().get()
             .uri("/api/v1/dags/{dagId}/dagRuns/{dagRunId}", dagId, dagRunId)
             .retrieve()
             .bodyToMono(AirflowDagRunResponse.class)
@@ -44,7 +44,7 @@ public class AirflowClient {
     }
 
     public AirflowTaskInstanceResponse getTaskInstances(String dagId, String dagRunId) {
-        return airflowWebClient.get()
+        return dynamicAirflowConfig.getWebClient().get()
             .uri("/api/v1/dags/{dagId}/dagRuns/{dagRunId}/taskInstances", dagId, dagRunId)
             .retrieve()
             .bodyToMono(AirflowTaskInstanceResponse.class)
@@ -52,7 +52,7 @@ public class AirflowClient {
     }
 
     public List<AirflowDagDTO> getAllDags() {
-        return airflowWebClient.get()
+        return dynamicAirflowConfig.getWebClient().get()
             .uri("/api/v1/dags?limit=100")
             .retrieve()
             .bodyToMono(AirflowDagsResponse.class)
@@ -61,7 +61,7 @@ public class AirflowClient {
     }
 
     public AirflowDagDTO getDag(String dagId) {
-        return airflowWebClient.get()
+        return dynamicAirflowConfig.getWebClient().get()
             .uri("/api/v1/dags/{dagId}", dagId)
             .retrieve()
             .bodyToMono(AirflowDagDTO.class)
@@ -69,7 +69,7 @@ public class AirflowClient {
     }
 
     public List<AirflowDagRunResponse> getDagRuns(String dagId) {
-        return airflowWebClient.get()
+        return dynamicAirflowConfig.getWebClient().get()
             .uri("/api/v1/dags/{dagId}/dagRuns?limit=10&order_by=-start_date", dagId)
             .retrieve()
             .bodyToMono(AirflowDagRunsResponse.class)
@@ -79,7 +79,7 @@ public class AirflowClient {
 
     public void pauseDag(String dagId, boolean isPaused) {
         Map<String, Object> body = Map.of("is_paused", isPaused);
-        airflowWebClient.patch()
+        dynamicAirflowConfig.getWebClient().patch()
             .uri("/api/v1/dags/{dagId}", dagId)
             .bodyValue(body)
             .retrieve()
@@ -97,7 +97,7 @@ public class AirflowClient {
 
     public String getTaskLogs(String dagId, String dagRunId, String taskId, int tryNumber) {
         try {
-            return airflowWebClient.get()
+            return dynamicAirflowConfig.getWebClient().get()
                 .uri("/api/v1/dags/{dagId}/dagRuns/{dagRunId}/taskInstances/{taskId}/logs/{tryNumber}",
                     dagId, dagRunId, taskId, tryNumber)
                 .header("Accept", "text/plain")
@@ -112,7 +112,7 @@ public class AirflowClient {
 
     public void markDagRunFailed(String dagId, String dagRunId) {
         Map<String, Object> body = Map.of("state", "failed");
-        airflowWebClient.patch()
+        dynamicAirflowConfig.getWebClient().patch()
             .uri("/api/v1/dags/{dagId}/dagRuns/{dagRunId}", dagId, dagRunId)
             .bodyValue(body)
             .retrieve()
@@ -122,7 +122,7 @@ public class AirflowClient {
 
     public boolean testConnection() {
         try {
-            airflowWebClient.get()
+            dynamicAirflowConfig.getWebClient().get()
                 .uri("/api/v1/health")
                 .retrieve()
                 .bodyToMono(String.class)

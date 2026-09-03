@@ -4,6 +4,7 @@ import { Subscription } from 'rxjs';
 
 import { ToastService } from '../../core/services/toast.service';
 import { PipelineApiService } from '../../core/services/pipeline-api.service';
+import { RuntimeConfigService } from '../../core/services/runtime-config.service';
 import { AuthService } from '../../core/auth/auth.service';
 import { AirflowDag, PipelineRun, TaskStatus, TriggerPipelineRequest } from '../../core/models/pipeline.model';
 
@@ -55,8 +56,6 @@ const TASK_LABEL_MAP: Record<string, string> = {
   evaluate_model: 'Evaluate Model',
   monitor_drift: 'Monitor Drift'
 };
-
-const AIRFLOW_BASE_URL = 'http://localhost:8080';
 
 @Component({
   selector: 'app-pipelines',
@@ -111,7 +110,8 @@ export class PipelinesComponent implements OnInit, OnDestroy {
     private readonly route: ActivatedRoute,
     private readonly router: Router,
     private readonly pipelineApiService: PipelineApiService,
-    private readonly authService: AuthService
+    private readonly authService: AuthService,
+    private readonly runtimeConfig: RuntimeConfigService
   ) {}
 
   ngOnInit(): void {
@@ -277,8 +277,12 @@ export class PipelinesComponent implements OnInit, OnDestroy {
     return `${days}d ago`;
   }
 
+  get airflowUrl(): string {
+    return this.runtimeConfig.airflowUrl;
+  }
+
   airflowDagUrl(dagId: string): string {
-    return `${AIRFLOW_BASE_URL}/dags/${dagId}`;
+    return `${this.runtimeConfig.airflowUrl}/dags/${dagId}`;
   }
 
   // ─── Side panel ────────────────────────────────────────────

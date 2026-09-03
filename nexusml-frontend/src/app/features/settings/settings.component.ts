@@ -4,23 +4,24 @@ import { AuthService } from '../../core/auth/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { CredentialService } from '../../core/services/credential.service';
 import { PipelineApiService } from '../../core/services/pipeline-api.service';
+import { ModelApiService } from '../../core/services/model-api.service';
+import { IntegrationService } from '../../core/services/integration.service';
 import { Credential, CreateCredentialRequest, CredentialType } from '../../core/models/credential.model';
+import { IntegrationConfig, UpdateIntegrationRequest } from '../../core/models/integration.model';
 
-type IntegrationStatus = 'connected' | 'disconnected' | 'error' | 'untested';
 type AuditDotColor = 'accent' | 'success' | 'warning';
 
-interface IntegrationConfig {
-  id: string;
-  name: string;
-  description: string;
-  url: string;
-  port: number | null;
-  status: IntegrationStatus;
-  lastTested: string | null;
-  icon: string;
-  dirty: boolean;
-  testing: boolean;
-}
+// Icon/description are cosmetic only — the backend doesn't store them, so any
+// integration id not listed here still renders with a sensible fallback.
+const INTEGRATION_META: Record<string, { description: string; icon: string }> = {
+  airflow: { description: 'Pipeline orchestration', icon: 'AF' },
+  mlflow: { description: 'Experiment tracking', icon: 'ML' },
+  prometheus: { description: 'Metrics collection', icon: 'PR' },
+  grafana: { description: 'Metrics visualization', icon: 'GR' },
+  kubernetes: { description: 'Container orchestration', icon: 'K8' },
+  slack: { description: 'Notifications', icon: 'SL' }
+};
+const DEFAULT_INTEGRATION_META = { description: '', icon: 'IN' };
 
 interface Role {
   id: string;
@@ -42,9 +43,6 @@ interface CredentialCategoryGroup {
   items: Credential[];
 }
 
-const TEST_DURATION_MS = 1500;
-const SAVE_DURATION_MS = 800;
-
 const CATEGORY_META: { category: string; label: string; icon: string }[] = [
   { category: 'SOURCE_CONTROL', label: 'Source Control', icon: 'SC' },
   { category: 'CONTAINER_REGISTRY', label: 'Container Registry', icon: 'CR' },
@@ -62,16 +60,10 @@ const CATEGORY_META: { category: string; label: string; icon: string }[] = [
   styleUrl: './settings.component.scss'
 })
 export class SettingsComponent implements OnInit {
-  saving = false;
-
-  integrations: IntegrationConfig[] = [
-    { id: 'airflow', name: 'Apache Airflow', description: 'Pipeline orchestration', url: 'http://localhost', port: 8080, status: 'connected', lastTested: '2 min ago', icon: 'AF', dirty: false, testing: false },
-    { id: 'mlflow', name: 'MLflow', description: 'Experiment tracking', url: 'http://localhost', port: 5000, status: 'connected', lastTested: '5 min ago', icon: 'ML', dirty: false, testing: false },
-    { id: 'prometheus', name: 'Prometheus', description: 'Metrics collection', url: 'http://localhost', port: 9090, status: 'error', lastTested: '10 min ago', icon: 'PR', dirty: false, testing: false },
-    { id: 'grafana', name: 'Grafana', description: 'Metrics visualization', url: 'http://localhost', port: 3000, status: 'disconnected', lastTested: null, icon: 'GR', dirty: false, testing: false },
-    { id: 'kubernetes', name: 'Kubernetes API', description: 'Container orchestration', url: 'https://localhost', port: 6443, status: 'connected', lastTested: '1 min ago', icon: 'K8', dirty: false, testing: false },
-    { id: 'slack', name: 'Slack Webhook', description: 'Notifications', url: 'https://hooks.slack.com', port: null, status: 'untested', lastTested: null, icon: 'SL', dirty: false, testing: false }
-  ];
+  integrations: IntegrationConfig[] = [];
+  isLoadingIntegrations = false;
+  editingIntegrations: Map<string, UpdateIntegrationRequest> = new Map();
+  testingIds = new Set<string>();
 
   roles: Role[] = [
     { id: 'admin', name: 'Admin', description: 'Full access to all features', userCount: 2 },
@@ -153,75 +145,174 @@ export class SettingsComponent implements OnInit {
     private readonly toastService: ToastService,
     private readonly credentialService: CredentialService,
     private readonly pipelineApiService: PipelineApiService,
+    private readonly modelApiService: ModelApiService,
+    private readonly integrationService: IntegrationService,
     public readonly authService: AuthService
   ) {}
 
   ngOnInit(): void {
+    this.loadIntegrations();
     this.loadCredentials();
   }
 
   get hasUnsavedChanges(): boolean {
-    return this.integrations.some(integration => integration.dirty);
+    return this.editingIntegrations.size > 0;
   }
 
-  statusBadgeClass(status: IntegrationStatus): string {
+  statusBadgeClass(status: IntegrationConfig['status']): string {
     return 'badge--' + status;
   }
 
-  onFieldChange(integration: IntegrationConfig): void {
-    integration.dirty = true;
+  integrationIcon(id: string): string {
+    return (INTEGRATION_META[id] ?? DEFAULT_INTEGRATION_META).icon;
   }
 
-  testConnection(integration: IntegrationConfig): void {
-    if (integration.testing) {
+  integrationDescription(id: string): string {
+    return (INTEGRATION_META[id] ?? DEFAULT_INTEGRATION_META).description;
+  }
+
+  loadIntegrations(): void {
+    this.isLoadingIntegrations = true;
+    this.integrationService.getAll().subscribe({
+      next: (integrations) => {
+        this.integrations = integrations;
+        this.isLoadingIntegrations = false;
+      },
+      error: () => {
+        this.isLoadingIntegrations = false;
+      }
+    });
+  }
+
+  // The inputs are bound to these instead of the source integration directly,
+  // so an in-progress edit survives change detection until it's actually saved.
+  displayedUrl(integration: IntegrationConfig): string {
+    return this.editingIntegrations.get(integration.id)?.url ?? integration.url;
+  }
+
+  displayedPort(integration: IntegrationConfig): number | null {
+    const edit = this.editingIntegrations.get(integration.id);
+    return edit ? edit.port : integration.port;
+  }
+
+  onUrlChange(id: string, url: string): void {
+    const existing = this.editingIntegrations.get(id) ?? { url, port: this.portFor(id) };
+    this.editingIntegrations.set(id, { ...existing, url });
+  }
+
+  onPortChange(id: string, port: number): void {
+    const existing = this.editingIntegrations.get(id) ?? { url: this.urlFor(id), port };
+    this.editingIntegrations.set(id, { ...existing, port });
+  }
+
+  isDirty(id: string): boolean {
+    return this.editingIntegrations.has(id);
+  }
+
+  isTesting(id: string): boolean {
+    return this.testingIds.has(id);
+  }
+
+  saveIntegration(id: string): void {
+    const request = this.editingIntegrations.get(id);
+    if (!request) {
+      return;
+    }
+    this.integrationService.update(id, request).subscribe({
+      next: (updated) => {
+        const idx = this.integrations.findIndex(i => i.id === id);
+        if (idx !== -1) {
+          this.integrations[idx] = updated;
+        }
+        this.editingIntegrations.delete(id);
+        this.toastService.show(`${updated.name} configuration saved`, 'success');
+      },
+      error: () => this.toastService.show('Failed to save configuration', 'error')
+    });
+  }
+
+  saveAllIntegrations(): void {
+    const ids = Array.from(this.editingIntegrations.keys());
+    ids.forEach(id => this.saveIntegration(id));
+  }
+
+  testIntegration(id: string): void {
+    const integration = this.integrations.find(i => i.id === id);
+    if (!integration || this.testingIds.has(id)) {
       return;
     }
 
-    integration.testing = true;
+    this.testingIds.add(id);
 
-    if (integration.id === 'airflow') {
+    // Airflow and MLflow have real, service-backed connection tests.
+    if (id === 'airflow') {
       this.pipelineApiService.testConnection().subscribe({
         next: (result) => {
-          integration.testing = false;
+          this.testingIds.delete(id);
           integration.status = result.connected ? 'connected' : 'error';
-          integration.lastTested = 'just now';
+          integration.lastTested = new Date().toISOString();
           this.toastService.show(
             result.connected ? `✓ Connected — ${result.dagCount} DAGs found` : '✗ Connection failed',
             result.connected ? 'success' : 'error'
           );
         },
         error: () => {
-          integration.testing = false;
+          this.testingIds.delete(id);
           integration.status = 'error';
-          integration.lastTested = 'just now';
+          integration.lastTested = new Date().toISOString();
           this.toastService.show('✗ Connection failed', 'error');
         }
       });
       return;
     }
 
-    setTimeout(() => {
-      integration.testing = false;
-      integration.status = Math.random() > 0.5 ? 'connected' : 'error';
-      integration.lastTested = 'just now';
-    }, TEST_DURATION_MS);
-  }
-
-  saveAll(): void {
-    if (!this.hasUnsavedChanges || this.saving) {
+    if (id === 'mlflow') {
+      this.modelApiService.testConnection().subscribe({
+        next: (result) => {
+          this.testingIds.delete(id);
+          integration.status = result?.connected ? 'connected' : 'error';
+          integration.lastTested = new Date().toISOString();
+          this.toastService.show(
+            integration.status === 'connected' ? '✓ Connected to MLflow' : '✗ Connection failed',
+            integration.status === 'connected' ? 'success' : 'error'
+          );
+        },
+        error: () => {
+          this.testingIds.delete(id);
+          integration.status = 'error';
+          integration.lastTested = new Date().toISOString();
+          this.toastService.show('✗ Connection failed', 'error');
+        }
+      });
       return;
     }
 
-    this.saving = true;
-
-    setTimeout(() => {
-      this.integrations.forEach(integration => (integration.dirty = false));
-      this.saving = false;
-      this.toastService.show('Settings saved successfully ✓', 'success');
-    }, SAVE_DURATION_MS);
+    // Everything else is a stub on the backend today — it always reports
+    // "connected" rather than actually reaching the service.
+    this.integrationService.testConnection(id).subscribe({
+      next: (updated) => {
+        this.testingIds.delete(id);
+        const idx = this.integrations.findIndex(i => i.id === id);
+        if (idx !== -1) {
+          this.integrations[idx] = updated;
+        }
+      },
+      error: () => {
+        this.testingIds.delete(id);
+        integration.status = 'error';
+      }
+    });
   }
 
   manageRole(role: Role): void {}
+
+  private urlFor(id: string): string {
+    return this.integrations.find(i => i.id === id)?.url ?? '';
+  }
+
+  private portFor(id: string): number | null {
+    return this.integrations.find(i => i.id === id)?.port ?? null;
+  }
 
   // ─── Credentials ───────────────────────────────────────────
 

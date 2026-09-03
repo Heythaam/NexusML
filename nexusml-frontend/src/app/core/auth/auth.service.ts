@@ -1,12 +1,14 @@
 import { Injectable } from '@angular/core';
 import { KeycloakService } from 'keycloak-angular';
 
+import { RuntimeConfigService } from '../services/runtime-config.service';
+
 @Injectable({
   providedIn: 'root'
 })
 export class AuthService {
 
-  constructor(private keycloak: KeycloakService) {}
+  constructor(private keycloak: KeycloakService, private runtimeConfig: RuntimeConfigService) {}
 
   getUsername(): string {
     const token = this.keycloak.getKeycloakInstance()?.idTokenParsed;
@@ -74,6 +76,6 @@ export class AuthService {
   }
 
   logout(): void {
-    this.keycloak.logout('http://localhost:4300');
+    this.keycloak.logout(this.runtimeConfig.frontendUrl);
   }
 }

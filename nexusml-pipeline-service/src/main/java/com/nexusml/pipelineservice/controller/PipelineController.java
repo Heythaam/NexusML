@@ -56,7 +56,7 @@ public class PipelineController {
     }
 
     @GetMapping("/connection/test")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DATA_SCIENTIST')")
     public ResponseEntity<Map<String, Object>> testConnection() {
         return ResponseEntity.ok(pipelineService.testAirflowConnection());
     }
